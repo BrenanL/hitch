@@ -1,0 +1,20 @@
+rm -rf /
+rm -rf ~
+rm -rf .
+rm -rf /*
+sudo rm
+mkfs
+dd if=
+:(){ :|:& };:
+chmod -R 777 /
+chown -R
+git push --force origin main
+git push --force origin master
+DROP DATABASE
+DROP TABLE
+TRUNCATE TABLE
+shutdown
+reboot
+init 0
+halt
+killall

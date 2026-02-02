@@ -1,0 +1,35 @@
+# Built binary
+/ht
+/ht.exe
+dist/
+
+# Go build/test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# SQLite (never commit local state)
+*.db
+*.db-wal
+*.db-shm
+
+# Hitch local config (user-specific)
+.hitch/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+
+# Temp / scratch
+tmp/
+private/

@@ -6,7 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Hitch is a hooks framework for AI coding agents. Users declare behaviors (notifications, safety guards, quality gates) in a DSL, and hitch generates Claude Code hook configurations and scripts. The CLI binary is `ht`.
 
-**Current status:** Documentation and design phase. No source code yet. Implementation follows the 12-phase plan in `docs/build-plan.md`.
+**Current status:** MVP implementation complete (all 12 phases). See `docs/analysis/design-review.md` for post-build review.
+
+## CRITICAL: Do NOT touch global Claude settings
+
+**NEVER use `--global` flags or modify `~/.claude/settings.json`.** Other agents on this machine depend on global Claude settings. All testing and development must use project-scoped mode (the default). Only project-level `.claude/settings.json` files should be written to.
 
 ## Technical Decisions (Constraints)
 
