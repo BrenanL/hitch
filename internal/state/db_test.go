@@ -11,8 +11,8 @@ func TestOpenInMemory(t *testing.T) {
 	}
 	defer db.Close()
 
-	if v := db.SchemaVersion(); v != 1 {
-		t.Errorf("schema version = %d, want 1", v)
+	if v := db.SchemaVersion(); v != 2 {
+		t.Errorf("schema version = %d, want 2", v)
 	}
 }
 
@@ -28,8 +28,8 @@ func TestMigrateIdempotent(t *testing.T) {
 		t.Fatalf("second migrate: %v", err)
 	}
 
-	if v := db.SchemaVersion(); v != 1 {
-		t.Errorf("schema version = %d, want 1", v)
+	if v := db.SchemaVersion(); v != 2 {
+		t.Errorf("schema version = %d, want 2", v)
 	}
 }
 
@@ -40,7 +40,7 @@ func TestTablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"channels", "rules", "events", "sessions", "kv_state", "mute", "schema_version"}
+	tables := []string{"channels", "rules", "events", "sessions", "kv_state", "mute", "schema_version", "api_requests"}
 	for _, table := range tables {
 		var name string
 		err := db.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)

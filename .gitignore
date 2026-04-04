@@ -33,3 +33,4 @@ Thumbs.db
 # Temp / scratch
 tmp/
 private/
+_gitmeta/

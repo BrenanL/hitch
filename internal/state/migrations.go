@@ -6,6 +6,7 @@ import "fmt"
 // Each migration is a function that runs SQL statements.
 var migrations = []func(*DB) error{
 	migrateV1,
+	migrateV2,
 }
 
 func (s *DB) migrate() error {
@@ -40,6 +41,42 @@ func (s *DB) schemaVersion() int {
 // SchemaVersion returns the current schema version. Exported for testing.
 func (s *DB) SchemaVersion() int {
 	return s.schemaVersion()
+}
+
+func migrateV2(s *DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS api_requests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+			request_id TEXT,
+			session_id TEXT,
+			model TEXT,
+			input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			cache_read_tokens INTEGER DEFAULT 0,
+			cache_creation_tokens INTEGER DEFAULT 0,
+			cost_usd REAL DEFAULT 0.0,
+			latency_ms INTEGER DEFAULT 0,
+			stop_reason TEXT,
+			streaming BOOLEAN DEFAULT TRUE,
+			endpoint TEXT,
+			error TEXT,
+			microcompact_count INTEGER DEFAULT 0,
+			truncated_results INTEGER DEFAULT 0,
+			total_tool_result_size INTEGER DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_requests_timestamp ON api_requests(timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_requests_session ON api_requests(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_requests_model ON api_requests(model)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("executing %q: %w", stmt[:40], err)
+		}
+	}
+
+	return nil
 }
 
 func migrateV1(s *DB) error {
