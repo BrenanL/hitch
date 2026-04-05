@@ -52,6 +52,44 @@ func TestQueryStopFailureEvents(t *testing.T) {
 	}
 }
 
+func TestQueryStopFailureEventsWithUntil(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+
+	events := []Event{
+		{SessionID: "s1", HookEvent: "StopFailure", Timestamp: now.Add(-20 * time.Minute).Format(time.RFC3339)},
+		{SessionID: "s2", HookEvent: "StopFailure", Timestamp: now.Add(-10 * time.Minute).Format(time.RFC3339)},
+		{SessionID: "s3", HookEvent: "StopFailure", Timestamp: now.Add(-2 * time.Minute).Format(time.RFC3339)},
+	}
+	for _, e := range events {
+		if err := db.EventLog(e); err != nil {
+			t.Fatalf("EventLog: %v", err)
+		}
+	}
+
+	since := now.Add(-30 * time.Minute).Format(time.RFC3339)
+	// until set to -5min: should exclude the -2min entry
+	until := now.Add(-5 * time.Minute).Format(time.RFC3339)
+
+	got, err := db.QueryStopFailureEvents(since, until)
+	if err != nil {
+		t.Fatalf("QueryStopFailureEvents with until: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d events, want 2 (until bound should exclude -2min entry)", len(got))
+	}
+	for _, e := range got {
+		if e.HookEvent != "StopFailure" {
+			t.Errorf("got non-StopFailure event: %q", e.HookEvent)
+		}
+	}
+}
+
 func TestEventLogAndQuery(t *testing.T) {
 	db, err := OpenInMemory()
 	if err != nil {
