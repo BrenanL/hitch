@@ -98,3 +98,40 @@ func TestBurnRateZeroElapsed(t *testing.T) {
 		t.Errorf("BurnRate(zero elapsed) = %f, want 0", got)
 	}
 }
+
+func TestBurnRateWindowLargerThanSpan(t *testing.T) {
+	// When window is larger than total sample span, all samples are included.
+	now := time.Now()
+	samples := []BurnSample{
+		{Timestamp: now, CumulativeTokens: 0},
+		{Timestamp: now.Add(1 * time.Minute), CumulativeTokens: 300},
+		{Timestamp: now.Add(2 * time.Minute), CumulativeTokens: 600},
+	}
+	// 600 tokens over 2 minutes = 300 tokens/min
+	want := 300.0
+	got := BurnRate(samples, 60*time.Minute)
+	if math.Abs(got-want) >= epsilon {
+		t.Errorf("BurnRate(window > span) = %f, want %f", got, want)
+	}
+}
+
+func TestBurnRateAllSamplesOutsideWindow(t *testing.T) {
+	// The boundary sample is included when it falls exactly at the cutoff or
+	// is the last sample strictly before the cutoff. This ensures there is always
+	// a start anchor for the rate calculation.
+	now := time.Now()
+	samples := []BurnSample{
+		{Timestamp: now, CumulativeTokens: 0},
+		{Timestamp: now.Add(1 * time.Minute), CumulativeTokens: 100},
+		{Timestamp: now.Add(10 * time.Minute), CumulativeTokens: 700},
+	}
+	// window = 9 minutes, latest = 10min, cutoff = 1min
+	// samples[1] at exactly 1min is NOT strictly before cutoff → loop breaks at i=1
+	// start stays 0; windowed = all 3 samples
+	// 700 tokens over 10 minutes = 70 tokens/min
+	want := 70.0
+	got := BurnRate(samples, 9*time.Minute)
+	if math.Abs(got-want) >= epsilon {
+		t.Errorf("BurnRate(boundary at cutoff) = %f, want %f", got, want)
+	}
+}

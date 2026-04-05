@@ -109,3 +109,93 @@ func TestDefaultPricingNotEmpty(t *testing.T) {
 		t.Error("DefaultPricing missing claude-opus-4-6")
 	}
 }
+
+func TestEstimateCostInputOnly(t *testing.T) {
+	// claude-opus-4-6: Input=5.00/MTok
+	// 1_000_000 input tokens = $5.00
+	p := Pricing{
+		"claude-opus-4-6": {Input: 5.00, Output: 25.00, CacheWrite: 10.00, CacheRead: 0.50},
+	}
+	got := p.EstimateCost("claude-opus-4-6", 1_000_000, 0, 0, 0)
+	want := 5.00
+	if math.Abs(got-want) > 0.000001 {
+		t.Errorf("EstimateCost input-only = %f, want %f", got, want)
+	}
+}
+
+func TestEstimateCostOutputOnly(t *testing.T) {
+	// claude-opus-4-6: Output=25.00/MTok
+	// 1_000_000 output tokens = $25.00
+	p := Pricing{
+		"claude-opus-4-6": {Input: 5.00, Output: 25.00, CacheWrite: 10.00, CacheRead: 0.50},
+	}
+	got := p.EstimateCost("claude-opus-4-6", 0, 1_000_000, 0, 0)
+	want := 25.00
+	if math.Abs(got-want) > 0.000001 {
+		t.Errorf("EstimateCost output-only = %f, want %f", got, want)
+	}
+}
+
+func TestEstimateCostCacheReadOnly(t *testing.T) {
+	// claude-opus-4-6: CacheRead=0.50/MTok
+	// 1_000_000 cacheRead tokens = $0.50
+	p := Pricing{
+		"claude-opus-4-6": {Input: 5.00, Output: 25.00, CacheWrite: 10.00, CacheRead: 0.50},
+	}
+	got := p.EstimateCost("claude-opus-4-6", 0, 0, 1_000_000, 0)
+	want := 0.50
+	if math.Abs(got-want) > 0.000001 {
+		t.Errorf("EstimateCost cacheRead-only = %f, want %f", got, want)
+	}
+}
+
+func TestEstimateCostCacheCreateOnly(t *testing.T) {
+	// claude-opus-4-6: CacheWrite=10.00/MTok
+	// 1_000_000 cacheCreate tokens = $10.00
+	p := Pricing{
+		"claude-opus-4-6": {Input: 5.00, Output: 25.00, CacheWrite: 10.00, CacheRead: 0.50},
+	}
+	got := p.EstimateCost("claude-opus-4-6", 0, 0, 0, 1_000_000)
+	want := 10.00
+	if math.Abs(got-want) > 0.000001 {
+		t.Errorf("EstimateCost cacheCreate-only = %f, want %f", got, want)
+	}
+}
+
+func TestLoadPricingFromFileMalformedJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pricing.json")
+	if err := os.WriteFile(path, []byte(`not valid json`), 0o644); err != nil {
+		t.Fatalf("writing test file: %v", err)
+	}
+	_, err := LoadPricingFromFile(path)
+	if err == nil {
+		t.Error("expected error for malformed JSON, got nil")
+	}
+}
+
+func TestWritePricingFile(t *testing.T) {
+	// Override home to a temp dir so WritePricingFile uses a safe path.
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	p := Pricing{
+		"claude-test": {Input: 1.0, Output: 2.0, CacheWrite: 0.5, CacheRead: 0.1},
+	}
+	if err := WritePricingFile(p); err != nil {
+		t.Fatalf("WritePricingFile: %v", err)
+	}
+
+	// Read it back and verify the model is present with correct values.
+	loaded, err := LoadPricingFromFile(PricingFilePath())
+	if err != nil {
+		t.Fatalf("LoadPricingFromFile after write: %v", err)
+	}
+	mp, ok := loaded["claude-test"]
+	if !ok {
+		t.Fatal("claude-test not found after write/read round-trip")
+	}
+	if mp.Input != 1.0 || mp.Output != 2.0 || mp.CacheWrite != 0.5 || mp.CacheRead != 0.1 {
+		t.Errorf("round-trip pricing values = %+v", mp)
+	}
+}
