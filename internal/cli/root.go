@@ -36,6 +36,8 @@ func init() {
 		newImportCmd(),
 		newDenyListCmd(),
 		newProxyCmd(),
+		newSettingsCmd(),
+		newSessionsCmd(),
 	)
 }
 
