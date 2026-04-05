@@ -5,6 +5,47 @@ package hookio
 
 import "encoding/json"
 
+// StopFailureInput contains the structured fields for a StopFailure event.
+type StopFailureInput struct {
+	ErrorType    string `json:"error_type"`
+	ErrorMessage string `json:"error_message"`
+}
+
+// TaskInput contains the structured fields for TaskCreated and TaskCompleted events.
+type TaskInput struct {
+	TaskID          string `json:"task_id"`
+	TaskSubject     string `json:"task_subject"`
+	TaskDescription string `json:"task_description,omitempty"`
+	TeammateNameHook string `json:"teammate_name,omitempty"`
+	TeamName        string `json:"team_name,omitempty"`
+}
+
+// ConfigChangeInput contains the structured fields for a ConfigChange event.
+type ConfigChangeInput struct {
+	ConfigSource string `json:"config_source"`
+}
+
+// PostCompactInput contains the structured fields for PostCompact (and PreCompact).
+type PostCompactInput struct {
+	CompactTrigger string `json:"compact_trigger"`
+}
+
+// WorktreeInput contains the structured fields for WorktreeCreate / WorktreeRemove.
+type WorktreeInput struct {
+	WorktreePath string `json:"worktree_path"`
+	TargetBranch string `json:"target_branch,omitempty"`
+	SourceBranch string `json:"source_branch,omitempty"`
+}
+
+// ElicitationInput contains the structured fields for Elicitation / ElicitationResult.
+type ElicitationInput struct {
+	ServerName        string          `json:"server_name"`
+	ToolName          string          `json:"tool_name"`
+	ElicitationSchema json.RawMessage `json:"elicitation_schema,omitempty"`
+	UserAction        string          `json:"user_action,omitempty"`
+	UserContent       json.RawMessage `json:"user_content,omitempty"`
+}
+
 // HookInput represents the JSON input piped to a hook via stdin.
 type HookInput struct {
 	SessionID      string          `json:"session_id"`
@@ -28,6 +69,42 @@ type HookInput struct {
 	UserPrompt string `json:"user_prompt,omitempty"`
 	// Stop-specific
 	StopReason string `json:"stop_reason,omitempty"`
+	// PermissionDenied-specific
+	PermissionDeniedReason string `json:"reason,omitempty"`
+	// TaskCreated / TaskCompleted-specific
+	TaskID           string `json:"task_id,omitempty"`
+	TaskSubject      string `json:"task_subject,omitempty"`
+	TaskDescription  string `json:"task_description,omitempty"`
+	TeammateNameHook string `json:"teammate_name,omitempty"`
+	TeamName         string `json:"team_name,omitempty"`
+	TaskStatus       string `json:"task_status,omitempty"`
+	// StopFailure-specific
+	ErrorType    string `json:"error_type,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	// TeammateIdle-specific
+	PendingTaskCount int `json:"pending_task_count,omitempty"`
+	// InstructionsLoaded-specific (also used by FileChanged via the same JSON tag)
+	EventFilePath string `json:"file_path,omitempty"`
+	MemoryType    string `json:"memory_type,omitempty"`
+	LoadReason    string `json:"load_reason,omitempty"`
+	// ConfigChange-specific
+	ConfigSource string `json:"config_source,omitempty"`
+	// CwdChanged-specific
+	OldCwd string `json:"old_cwd,omitempty"`
+	NewCwd string `json:"new_cwd,omitempty"`
+	// FileChanged-specific
+	ChangeType string `json:"change_type,omitempty"`
+	// WorktreeCreate / WorktreeRemove-specific
+	WorktreePath string `json:"worktree_path,omitempty"`
+	TargetBranch string `json:"target_branch,omitempty"`
+	SourceBranch string `json:"source_branch,omitempty"`
+	// PostCompact-specific
+	CompactTrigger string `json:"compact_trigger,omitempty"`
+	// Elicitation / ElicitationResult-specific
+	ServerName        string          `json:"server_name,omitempty"`
+	ElicitationSchema json.RawMessage `json:"elicitation_schema,omitempty"`
+	UserAction        string          `json:"user_action,omitempty"`
+	UserContent       json.RawMessage `json:"user_content,omitempty"`
 }
 
 // ToolInputBash represents the tool_input for a Bash tool call.
@@ -82,6 +159,8 @@ type HookOutput struct {
 	SuppressNotification *bool `json:"suppressNotification,omitempty"`
 	// For PermissionRequest hooks: "allow" or "deny"
 	PermissionDecision string `json:"permissionDecision,omitempty"`
+	// For WorktreeCreate and other hooks that return structured data
+	HookSpecificOutput map[string]any `json:"hookSpecificOutput,omitempty"`
 }
 
 // Event name constants matching Claude Code's hook event names.
@@ -98,4 +177,18 @@ const (
 	EventSubagentStop       = "SubagentStop"
 	EventStop               = "Stop"
 	EventPreCompact         = "PreCompact"
+	EventPermissionDenied   = "PermissionDenied"
+	EventStopFailure        = "StopFailure"
+	EventTaskCreated        = "TaskCreated"
+	EventTaskCompleted      = "TaskCompleted"
+	EventTeammateIdle       = "TeammateIdle"
+	EventInstructionsLoaded = "InstructionsLoaded"
+	EventConfigChange       = "ConfigChange"
+	EventCwdChanged         = "CwdChanged"
+	EventFileChanged        = "FileChanged"
+	EventWorktreeCreate     = "WorktreeCreate"
+	EventWorktreeRemove     = "WorktreeRemove"
+	EventPostCompact        = "PostCompact"
+	EventElicitation        = "Elicitation"
+	EventElicitationResult  = "ElicitationResult"
 )

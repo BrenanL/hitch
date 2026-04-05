@@ -94,3 +94,69 @@ func (h *HookInput) FilePath() string {
 	}
 	return fp.FilePath
 }
+
+// StopFailure returns typed fields from a StopFailure event.
+// Returns nil if event type is wrong.
+func (h *HookInput) StopFailure() *StopFailureInput {
+	if h.HookEventName != EventStopFailure {
+		return nil
+	}
+	return &StopFailureInput{
+		ErrorType:    h.ErrorType,
+		ErrorMessage: h.ErrorMessage,
+	}
+}
+
+// Task returns typed fields from a TaskCreated or TaskCompleted event.
+// Returns nil if event type is wrong.
+func (h *HookInput) Task() *TaskInput {
+	if h.HookEventName != EventTaskCreated && h.HookEventName != EventTaskCompleted {
+		return nil
+	}
+	return &TaskInput{
+		TaskID:          h.TaskID,
+		TaskSubject:     h.TaskSubject,
+		TaskDescription: h.TaskDescription,
+		TeammateNameHook: h.TeammateNameHook,
+		TeamName:        h.TeamName,
+	}
+}
+
+// ConfigChange returns typed fields from a ConfigChange event.
+// Returns nil if event type is wrong.
+func (h *HookInput) ConfigChange() *ConfigChangeInput {
+	if h.HookEventName != EventConfigChange {
+		return nil
+	}
+	return &ConfigChangeInput{
+		ConfigSource: h.ConfigSource,
+	}
+}
+
+// Worktree returns typed fields from a WorktreeCreate or WorktreeRemove event.
+// Returns nil if event type is wrong.
+func (h *HookInput) Worktree() *WorktreeInput {
+	if h.HookEventName != EventWorktreeCreate && h.HookEventName != EventWorktreeRemove {
+		return nil
+	}
+	return &WorktreeInput{
+		WorktreePath: h.WorktreePath,
+		TargetBranch: h.TargetBranch,
+		SourceBranch: h.SourceBranch,
+	}
+}
+
+// Elicitation returns typed fields from an Elicitation or ElicitationResult event.
+// Returns nil if event type is wrong.
+func (h *HookInput) Elicitation() *ElicitationInput {
+	if h.HookEventName != EventElicitation && h.HookEventName != EventElicitationResult {
+		return nil
+	}
+	return &ElicitationInput{
+		ServerName:        h.ServerName,
+		ToolName:          h.ToolName,
+		ElicitationSchema: h.ElicitationSchema,
+		UserAction:        h.UserAction,
+		UserContent:       h.UserContent,
+	}
+}

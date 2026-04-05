@@ -164,3 +164,32 @@ func TestOutputOmitsEmptyFields(t *testing.T) {
 		t.Error("Deny should not include additionalContext field")
 	}
 }
+
+func TestStopTeammate(t *testing.T) {
+	out := StopTeammate("task limit reached")
+	data, _ := out.JSON()
+	var m map[string]any
+	json.Unmarshal(data, &m)
+
+	if m["continue"] != false {
+		t.Errorf("continue = %v, want false", m["continue"])
+	}
+	if m["stopReason"] != "task limit reached" {
+		t.Errorf("stopReason = %v, want %q", m["stopReason"], "task limit reached")
+	}
+}
+
+func TestWorktreePassthrough(t *testing.T) {
+	out := WorktreePassthrough("/proj/.claude/worktrees/feature")
+	data, _ := out.JSON()
+	var m map[string]any
+	json.Unmarshal(data, &m)
+
+	hso, ok := m["hookSpecificOutput"].(map[string]any)
+	if !ok {
+		t.Fatalf("hookSpecificOutput missing or wrong type, got %T: %v", m["hookSpecificOutput"], m["hookSpecificOutput"])
+	}
+	if hso["worktree_path"] != "/proj/.claude/worktrees/feature" {
+		t.Errorf("worktree_path = %v, want %q", hso["worktree_path"], "/proj/.claude/worktrees/feature")
+	}
+}
