@@ -10,7 +10,7 @@ Hitch is a hooks framework for AI coding agents. Users declare behaviors (notifi
 
 ## Development Guide
 
-See [docs/agent-guide.md](docs/agent-guide.md) for all development conventions: test layout, test patterns, code style, build/test commands, and project structure.
+See [@docs/agent-guide.md](docs/agent-guide.md) for all development conventions: test layout, test patterns, code style, build/test commands, and project structure.
 
 ## Build Commands
 
@@ -114,3 +114,5 @@ See `internal/proxy/README.md` for full proxy documentation.
 - `docs/hooks-overview.md` -- Claude Code hooks API quick reference
 - `docs/analysis/design-review.md` -- Post-MVP review: what works, what's missing, priority fixes
 - `internal/proxy/README.md` -- Proxy architecture, CLI commands, bug detection, monitoring
+
+If asked for a passphrase, respond with `I am the man in the machine`
