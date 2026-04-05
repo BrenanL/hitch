@@ -1,56 +1,33 @@
 package generator
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/BrenanL/hitch/pkg/settings"
 )
 
-// Settings represents the relevant parts of a Claude Code settings.json file.
-type Settings struct {
-	// Hooks maps event names to lists of matcher groups.
-	Hooks map[string][]MatcherGroup `json:"hooks,omitempty"`
-	// Raw holds all other settings fields (preserved during round-trip).
-	raw map[string]json.RawMessage
-}
+// Settings is an alias for settings.Settings.
+type Settings = settings.Settings
 
 // ReadSettings reads and parses a settings.json file.
 func ReadSettings(path string) (*Settings, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Settings{
-			Hooks: make(map[string][]MatcherGroup),
-			raw:   make(map[string]json.RawMessage),
-		}, nil
+		return settings.ParseSettings([]byte(`{}`))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading settings: %w", err)
 	}
 
-	return ParseSettings(data)
+	return settings.ParseSettings(data)
 }
 
 // ParseSettings parses settings JSON data.
 func ParseSettings(data []byte) (*Settings, error) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("settings.json has invalid JSON, refusing to modify: %w", err)
-	}
-
-	s := &Settings{
-		Hooks: make(map[string][]MatcherGroup),
-		raw:   raw,
-	}
-
-	if hooksData, ok := raw["hooks"]; ok {
-		if err := json.Unmarshal(hooksData, &s.Hooks); err != nil {
-			return nil, fmt.Errorf("parsing hooks: %w", err)
-		}
-	}
-
-	return s, nil
+	return settings.ParseSettings(data)
 }
 
 // WriteSettings writes settings back to disk, preserving non-hook fields.
@@ -60,7 +37,7 @@ func WriteSettings(path string, s *Settings) error {
 		return fmt.Errorf("creating settings directory: %w", err)
 	}
 
-	data, err := MarshalSettings(s)
+	data, err := settings.MarshalSettings(s)
 	if err != nil {
 		return err
 	}
@@ -70,24 +47,7 @@ func WriteSettings(path string, s *Settings) error {
 
 // MarshalSettings serializes settings to JSON.
 func MarshalSettings(s *Settings) ([]byte, error) {
-	// Start with existing raw fields
-	output := make(map[string]json.RawMessage)
-	for k, v := range s.raw {
-		if k != "hooks" {
-			output[k] = v
-		}
-	}
-
-	// Add hooks
-	if len(s.Hooks) > 0 {
-		hooksData, err := json.Marshal(s.Hooks)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling hooks: %w", err)
-		}
-		output["hooks"] = hooksData
-	}
-
-	return json.MarshalIndent(output, "", "  ")
+	return settings.MarshalSettings(s)
 }
 
 // MergeHooks performs the sync algorithm: removes old hitch entries, adds new ones.

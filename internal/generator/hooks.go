@@ -5,20 +5,14 @@ import (
 
 	"github.com/BrenanL/hitch/internal/dsl"
 	"github.com/BrenanL/hitch/internal/state"
+	"github.com/BrenanL/hitch/pkg/settings"
 )
 
-// HookEntry represents a single hook entry in settings.json.
-type HookEntry struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Async   bool   `json:"async,omitempty"`
-}
+// HookEntry is an alias for settings.HookEntry.
+type HookEntry = settings.HookEntry
 
-// MatcherGroup represents a matcher group in settings.json.
-type MatcherGroup struct {
-	Matcher string      `json:"matcher"`
-	Hooks   []HookEntry `json:"hooks"`
-}
+// MatcherGroup is an alias for settings.MatcherGroup.
+type MatcherGroup = settings.MatcherGroup
 
 // RuleToHookEntry converts a stored rule to a settings.json hook entry.
 func RuleToHookEntry(rule state.Rule, htBinary string) (*HookEntryInfo, error) {
