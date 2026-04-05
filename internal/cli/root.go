@@ -41,6 +41,10 @@ func init() {
 		newAutopsyCmd(),
 		newProfileCmd(),
 		newLaunchCmd(),
+		newDaemonCmd(),
+		newAgentsCmd(),
+		newWatchCmd(),
+		newDashboardCmd(),
 	)
 }
 
