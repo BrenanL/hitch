@@ -67,6 +67,9 @@ Claude Code  --HTTP-->  Hitch Proxy (localhost:9800)  --HTTPS-->  api.anthropic.
 | `internal/state/` | SQLite database layer: channels, rules, events, sessions, kv, mute, api_requests |
 | `internal/credentials/` | age encryption + env var fallback |
 | `internal/platform/` | OS/WSL detection, platform-specific notifications |
+| `internal/pricing/` | Cost estimation by model string (extracted from proxy/cost.go) |
+| `internal/tokens/` | Token estimation (chars/4 heuristic) |
+| `internal/metrics/` | Burn rate and token velocity calculations |
 | `internal/proxy/` | Transparent API logging proxy: server, forwarding, SSE, cost, detection, analysis |
 | `pkg/hookio/` | **Public library** -- parse hook stdin JSON, build stdout JSON responses |
 | `integration/` | End-to-end tests (separate package from SUT) |
