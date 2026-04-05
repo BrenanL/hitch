@@ -38,6 +38,7 @@ func init() {
 		newProxyCmd(),
 		newSettingsCmd(),
 		newSessionsCmd(),
+		newAutopsyCmd(),
 	)
 }
 
