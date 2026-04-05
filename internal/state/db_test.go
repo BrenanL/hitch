@@ -11,7 +11,7 @@ func TestOpenInMemory(t *testing.T) {
 	}
 	defer db.Close()
 
-	if v := db.SchemaVersion(); v != 2 {
+	if v := db.SchemaVersion(); v != 3 {
 		t.Errorf("schema version = %d, want 2", v)
 	}
 }
@@ -28,7 +28,7 @@ func TestMigrateIdempotent(t *testing.T) {
 		t.Fatalf("second migrate: %v", err)
 	}
 
-	if v := db.SchemaVersion(); v != 2 {
+	if v := db.SchemaVersion(); v != 3 {
 		t.Errorf("schema version = %d, want 2", v)
 	}
 }

@@ -24,11 +24,12 @@ type RequestLog struct {
 	RequestID           string
 	SessionID           string
 	Model               string
+	HTTPMethod          string
+	HTTPStatus          int
 	InputTokens         int
 	OutputTokens        int
 	CacheReadTokens     int
 	CacheCreationTokens int
-	CostUSD             float64
 	LatencyMS           int64
 	StopReason          string
 	Streaming           bool
@@ -37,6 +38,13 @@ type RequestLog struct {
 	MicrocompactCount   int
 	TruncatedResults    int
 	TotalToolResultSize int
+	RequestHeaders      string
+	ResponseHeaders     string
+	RequestBodySize     int64
+	ResponseBodySize    int64
+	RequestLogPath      string
+	ResponseLogPath     string
+	MessageCount        int
 }
 
 // Server is the transparent logging proxy between Claude Code and the Anthropic API.
@@ -48,6 +56,7 @@ type Server struct {
 	startTime  time.Time
 	reqCount   atomic.Int64
 	pidFile    string
+	txlog      *TransactionLogger
 }
 
 // NewServer creates a new proxy server.
@@ -58,11 +67,15 @@ func NewServer(port int, db *state.DB) *Server {
 		upstream: "https://api.anthropic.com",
 		db:       db,
 		pidFile:  filepath.Join(home, ".hitch", "proxy.pid"),
+		txlog:    NewTransactionLogger(),
 	}
 }
 
 // Start starts the proxy server and blocks until SIGINT/SIGTERM.
 func (s *Server) Start() error {
+	// Seed pricing file on first run
+	SeedPricingFile()
+
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf("localhost:%d", s.port),
 		Handler:      s,
@@ -121,8 +134,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Extract request metadata
 	var reqMeta struct {
-		Stream bool   `json:"stream"`
-		Model  string `json:"model"`
+		Stream   bool              `json:"stream"`
+		Model    string            `json:"model"`
+		Messages []json.RawMessage `json:"messages"`
 	}
 	json.Unmarshal(bodyBytes, &reqMeta)
 
@@ -137,34 +151,61 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[detect] budget truncation: %d truncated tool results (%d bytes total)", truncatedCount, toolResultSize)
 	}
 
+	// Capture request headers
+	reqHeadersJSON, _ := json.Marshal(SanitizeHeaders(r.Header))
+	sessionID := r.Header.Get("X-Claude-Code-Session-Id")
+
+	// Write request body to transaction log
+	txID := s.txlog.nextID(start)
+	reqLogPath := s.txlog.WriteRequestLog(start, r.Method, r.URL.Path, r.Header, bodyBytes)
+
 	// Forward request to upstream
 	resp, err := s.forwardRequest(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("upstream error: %v", err), http.StatusBadGateway)
 		s.saveLog(&RequestLog{
 			Endpoint:            r.URL.Path,
+			HTTPMethod:          r.Method,
 			Model:               reqMeta.Model,
 			Streaming:           reqMeta.Stream,
 			LatencyMS:           time.Since(start).Milliseconds(),
 			Error:               err.Error(),
+			SessionID:           sessionID,
+			RequestHeaders:      string(reqHeadersJSON),
+			RequestBodySize:     int64(len(bodyBytes)),
+			RequestLogPath:      reqLogPath,
+			MessageCount:        len(reqMeta.Messages),
 			MicrocompactCount:   microcompactCount,
 			TruncatedResults:    truncatedCount,
 			TotalToolResultSize: toolResultSize,
-			SessionID:           extractSessionID(r),
 		})
 		return
 	}
 	defer resp.Body.Close()
 
+	// Capture response headers
+	respHeadersJSON, _ := json.Marshal(SanitizeHeaders(resp.Header))
+
+	// Create response log
+	respLog := s.txlog.CreateResponseLog(start, txID, resp.StatusCode, resp.Header)
+	defer respLog.Close()
+
 	// Build log record
 	rec := &RequestLog{
 		Endpoint:            r.URL.Path,
+		HTTPMethod:          r.Method,
+		HTTPStatus:          resp.StatusCode,
 		Streaming:           reqMeta.Stream,
 		Model:               reqMeta.Model,
+		SessionID:           sessionID,
+		MessageCount:        len(reqMeta.Messages),
+		RequestHeaders:      string(reqHeadersJSON),
+		ResponseHeaders:     string(respHeadersJSON),
+		RequestBodySize:     int64(len(bodyBytes)),
+		RequestLogPath:      reqLogPath,
 		MicrocompactCount:   microcompactCount,
 		TruncatedResults:    truncatedCount,
 		TotalToolResultSize: toolResultSize,
-		SessionID:           extractSessionID(r),
 	}
 
 	// Choose streaming vs non-streaming path
@@ -172,15 +213,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream")
 
 	if isStream {
-		s.handleStreaming(w, resp, rec)
+		s.handleStreaming(w, resp, rec, respLog)
 	} else {
-		s.handleNonStreaming(w, resp, rec)
+		s.handleNonStreaming(w, resp, rec, respLog)
 	}
 
 	// Finalize record
 	rec.LatencyMS = time.Since(start).Milliseconds()
-	rec.CostUSD = estimateCost(rec.Model, rec.InputTokens, rec.OutputTokens,
-		rec.CacheReadTokens, rec.CacheCreationTokens)
+	rec.ResponseLogPath = respLog.Path()
+	rec.ResponseBodySize = respLog.Size()
 
 	s.reqCount.Add(1)
 	s.saveLog(rec)
@@ -205,11 +246,12 @@ func (s *Server) saveLog(rec *RequestLog) {
 		RequestID:           rec.RequestID,
 		SessionID:           rec.SessionID,
 		Model:               rec.Model,
+		HTTPMethod:          rec.HTTPMethod,
+		HTTPStatus:          rec.HTTPStatus,
 		InputTokens:         rec.InputTokens,
 		OutputTokens:        rec.OutputTokens,
 		CacheReadTokens:     rec.CacheReadTokens,
 		CacheCreationTokens: rec.CacheCreationTokens,
-		CostUSD:             rec.CostUSD,
 		LatencyMS:           rec.LatencyMS,
 		StopReason:          rec.StopReason,
 		Streaming:           rec.Streaming,
@@ -218,6 +260,13 @@ func (s *Server) saveLog(rec *RequestLog) {
 		MicrocompactCount:   rec.MicrocompactCount,
 		TruncatedResults:    rec.TruncatedResults,
 		TotalToolResultSize: rec.TotalToolResultSize,
+		RequestHeaders:      rec.RequestHeaders,
+		ResponseHeaders:     rec.ResponseHeaders,
+		RequestBodySize:     rec.RequestBodySize,
+		ResponseBodySize:    rec.ResponseBodySize,
+		RequestLogPath:      rec.RequestLogPath,
+		ResponseLogPath:     rec.ResponseLogPath,
+		MessageCount:        rec.MessageCount,
 	}); err != nil {
 		log.Printf("error saving log: %v", err)
 	}
@@ -233,13 +282,4 @@ func (s *Server) writePID() error {
 
 func (s *Server) removePID() {
 	os.Remove(s.pidFile)
-}
-
-func extractSessionID(r *http.Request) string {
-	for _, h := range []string{"X-Session-Id", "Anthropic-Session-Id"} {
-		if id := r.Header.Get(h); id != "" {
-			return id
-		}
-	}
-	return ""
 }

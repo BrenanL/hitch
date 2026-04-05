@@ -7,6 +7,7 @@ import "fmt"
 var migrations = []func(*DB) error{
 	migrateV1,
 	migrateV2,
+	migrateV3,
 }
 
 func (s *DB) migrate() error {
@@ -41,6 +42,51 @@ func (s *DB) schemaVersion() int {
 // SchemaVersion returns the current schema version. Exported for testing.
 func (s *DB) SchemaVersion() int {
 	return s.schemaVersion()
+}
+
+func migrateV3(s *DB) error {
+	// Drop and recreate api_requests with full schema (existing data is disposable).
+	stmts := []string{
+		`DROP TABLE IF EXISTS api_requests`,
+		`CREATE TABLE api_requests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+			request_id TEXT,
+			session_id TEXT,
+			model TEXT,
+			http_method TEXT,
+			http_status INTEGER DEFAULT 0,
+			input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			cache_read_tokens INTEGER DEFAULT 0,
+			cache_creation_tokens INTEGER DEFAULT 0,
+			latency_ms INTEGER DEFAULT 0,
+			stop_reason TEXT,
+			streaming BOOLEAN DEFAULT TRUE,
+			endpoint TEXT,
+			error TEXT,
+			microcompact_count INTEGER DEFAULT 0,
+			truncated_results INTEGER DEFAULT 0,
+			total_tool_result_size INTEGER DEFAULT 0,
+			request_headers TEXT,
+			response_headers TEXT,
+			request_body_size INTEGER DEFAULT 0,
+			response_body_size INTEGER DEFAULT 0,
+			request_log_path TEXT,
+			response_log_path TEXT,
+			message_count INTEGER DEFAULT 0
+		)`,
+		`CREATE INDEX idx_api_requests_timestamp ON api_requests(timestamp)`,
+		`CREATE INDEX idx_api_requests_session ON api_requests(session_id)`,
+		`CREATE INDEX idx_api_requests_model ON api_requests(model)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("executing %q: %w", stmt[:40], err)
+		}
+	}
+	return nil
 }
 
 func migrateV2(s *DB) error {

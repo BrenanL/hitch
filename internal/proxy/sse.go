@@ -35,8 +35,8 @@ type sseDelta struct {
 	StopReason string `json:"stop_reason,omitempty"`
 }
 
-// handleStreaming passes through SSE events line-by-line while extracting metadata for logging.
-func (s *Server) handleStreaming(w http.ResponseWriter, resp *http.Response, rec *RequestLog) {
+// handleStreaming passes through SSE events while extracting metadata and logging to disk.
+func (s *Server) handleStreaming(w http.ResponseWriter, resp *http.Response, rec *RequestLog, respLog *ResponseLog) {
 	copyResponseHeaders(w, resp)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -60,6 +60,9 @@ func (s *Server) handleStreaming(w http.ResponseWriter, resp *http.Response, rec
 		fmt.Fprintf(w, "%s\n", line)
 		flusher.Flush()
 
+		// Log the raw line to disk
+		respLog.WriteLine(line)
+
 		// Parse data lines for logging metadata
 		if strings.HasPrefix(line, "data: ") {
 			parseSSEData(strings.TrimPrefix(line, "data: "), rec)
@@ -71,8 +74,8 @@ func (s *Server) handleStreaming(w http.ResponseWriter, resp *http.Response, rec
 	}
 }
 
-// handleNonStreaming forwards a non-streaming response and extracts metadata.
-func (s *Server) handleNonStreaming(w http.ResponseWriter, resp *http.Response, rec *RequestLog) {
+// handleNonStreaming forwards a non-streaming response and logs it.
+func (s *Server) handleNonStreaming(w http.ResponseWriter, resp *http.Response, rec *RequestLog, respLog *ResponseLog) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "failed to read upstream response", http.StatusBadGateway)
@@ -83,6 +86,9 @@ func (s *Server) handleNonStreaming(w http.ResponseWriter, resp *http.Response, 
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
+
+	// Log the full body to disk
+	respLog.WriteBody(body)
 
 	if resp.StatusCode < 400 {
 		parseNonStreamingResponse(body, rec)
@@ -125,7 +131,7 @@ func parseSSEData(jsonStr string, rec *RequestLog) {
 	}
 }
 
-// parseNonStreamingResponse extracts metadata from a complete (non-streaming) API response.
+// parseNonStreamingResponse extracts metadata from a complete API response.
 func parseNonStreamingResponse(body []byte, rec *RequestLog) {
 	var resp struct {
 		ID         string   `json:"id"`
