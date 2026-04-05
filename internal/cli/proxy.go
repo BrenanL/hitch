@@ -398,7 +398,7 @@ func runProxySessions(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("%-36s %5s %-15s %-15s %10s %10s\n",
+	fmt.Printf("%-8s %5s %-8s %-8s %10s %10s\n",
 		"SESSION", "REQS", "FIRST", "LAST", "TOKENS", "COST")
 
 	for _, s := range sessions {
@@ -422,13 +422,8 @@ func runProxySessions(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		sessID := s.SessionID
-		if len(sessID) > 36 {
-			sessID = sessID[:36]
-		}
-
-		fmt.Printf("%-36s %5d %-15s %-15s %10d $%9.4f\n",
-			sessID, s.RequestCount, first, last, total, cost)
+		fmt.Printf("%-8s %5d %-8s %-8s %10d $%9.4f\n",
+			shortSessionID(s.SessionID), s.RequestCount, first, last, total, cost)
 	}
 	return nil
 }
@@ -1023,6 +1018,17 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// shortSessionID returns the first UUID segment (8 chars) of a session ID.
+func shortSessionID(id string) string {
+	if idx := strings.Index(id, "-"); idx > 0 {
+		return id[:idx]
+	}
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func formatDuration(d time.Duration) string {

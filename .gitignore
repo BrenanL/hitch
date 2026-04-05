@@ -17,6 +17,10 @@ coverage.html
 # Hitch local config (user-specific)
 .hitch/
 
+# Local Claude settings (developer-specific, not shared)
+.claude/settings.local.json
+CLAUDE.local.md
+
 # OS files
 .DS_Store
 Thumbs.db
