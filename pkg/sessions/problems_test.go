@@ -328,6 +328,21 @@ func TestDetectContextFillNoProgress_BelowInputThreshold(t *testing.T) {
 	}
 }
 
+func TestDetectContextFillNoProgress_ExactBoundaryPlusOne(t *testing.T) {
+	// 50_001 is strictly above the 50_000 threshold, so it should trigger when
+	// the output ratio is also below the threshold.
+	s := &ParsedSession{
+		TokenUsage: TokenUsage{
+			InputTokens:  50_001,
+			OutputTokens: 100, // ratio = 100/50101 ≈ 0.002 < 0.05
+		},
+	}
+	problems := DetectProblems(s, testCfg)
+	if len(problems.ContextFillNoProgress) != 1 {
+		t.Errorf("expected 1 context fill problem at input=50001, got %d", len(problems.ContextFillNoProgress))
+	}
+}
+
 func TestDetectContextFillNoProgress_HighOutputRatio(t *testing.T) {
 	s := &ParsedSession{
 		TokenUsage: TokenUsage{

@@ -103,6 +103,33 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+// TestFormatTokensMRangeExact verifies that M-range values use one decimal place.
+func TestFormatTokensMRangeExact(t *testing.T) {
+	cases := []struct {
+		n    int
+		want string
+	}{
+		{1_000_000, "1.0M"},
+		{2_500_000, "2.5M"},
+		{10_000_000, "10.0M"},
+	}
+	for _, c := range cases {
+		got := formatTokens(c.n)
+		if got != c.want {
+			t.Errorf("formatTokens(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
+// TestTruncateExactLength verifies that a string of exactly n runes is returned unchanged.
+func TestTruncateExactLength(t *testing.T) {
+	s := "hello"
+	got := truncate(s, 5)
+	if got != s {
+		t.Errorf("truncate(%q, 5) = %q, want %q (exact length should not truncate)", s, got, s)
+	}
+}
+
 // TestFindSessionByPrefixNotFound verifies the error path when no session matches.
 func TestFindSessionByPrefixNotFound(t *testing.T) {
 	tmpHome := t.TempDir()

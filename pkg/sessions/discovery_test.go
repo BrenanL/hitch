@@ -182,6 +182,40 @@ func TestParseProjectDirRoundtrip(t *testing.T) {
 	}
 }
 
+// TestDiscoverSessionsEmptyDir verifies that DiscoverSessions on a dir with no
+// JSONL files returns an empty (non-nil) slice without error.
+func TestDiscoverSessionsEmptyDir(t *testing.T) {
+	projectDir := t.TempDir()
+	summaries, err := DiscoverSessions(projectDir)
+	if err != nil {
+		t.Fatalf("DiscoverSessions on empty dir returned error: %v", err)
+	}
+	if len(summaries) != 0 {
+		t.Errorf("len(summaries) = %d, want 0", len(summaries))
+	}
+}
+
+// TestIsValidUUIDUppercase verifies that isValidUUID accepts uppercase hex letters
+// (A-F) since the implementation allows them.
+func TestIsValidUUIDUppercase(t *testing.T) {
+	upper := "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+	if !isValidUUID(upper) {
+		t.Errorf("isValidUUID(%q) = false, want true (uppercase hex should be valid)", upper)
+	}
+}
+
+// TestDecodeProjectDirNameDoubleSlash verifies the double-slash collapse logic.
+// An encoded name with leading hyphen results in "//" at the start, which must
+// be collapsed to a single slash.
+func TestDecodeProjectDirNameDoubleSlash(t *testing.T) {
+	// "-home" decodes to "/home" (the leading - becomes / then combined with the
+	// implicit leading /).
+	got := decodeProjectDirName("-home-user")
+	if got != "/home/user" {
+		t.Errorf("decodeProjectDirName(-home-user) = %q, want /home/user", got)
+	}
+}
+
 // TestParseProjectDirSessionsIndexJSON verifies sessions-index.json takes precedence.
 func TestParseProjectDirSessionsIndexJSON(t *testing.T) {
 	dir := t.TempDir()

@@ -179,6 +179,47 @@ func TestLoadSubagentsDepthLimit(t *testing.T) {
 	_ = total
 }
 
+// TestLoadSubagentsNoMetaFile verifies that a subagent without a .meta.json file
+// still loads correctly with empty AgentName and AgentType fields.
+func TestLoadSubagentsNoMetaFile(t *testing.T) {
+	sessionDir := t.TempDir()
+	subagentsDir := filepath.Join(sessionDir, "subagents")
+	if err := os.MkdirAll(subagentsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	agentJSONL := `{"type":"assistant","uuid":"a1","sessionId":"eeeeeeee-0000-0000-0000-000000000001","timestamp":"2026-04-04T10:00:00.000Z","isSidechain":false,"message":{"id":"msg_nometa","role":"assistant","model":"claude-sonnet-4-6","stop_reason":"end_turn","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":10,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+`
+	agentPath := filepath.Join(subagentsDir, "agent-nometa.jsonl")
+	if err := os.WriteFile(agentPath, []byte(agentJSONL), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Intentionally omit the .meta.json file.
+
+	subagents, err := LoadSubagents(sessionDir)
+	if err != nil {
+		t.Fatalf("LoadSubagents: %v", err)
+	}
+
+	if len(subagents) != 1 {
+		t.Fatalf("len(subagents) = %d, want 1", len(subagents))
+	}
+
+	sa := subagents[0]
+	if sa.AgentName != "" {
+		t.Errorf("AgentName = %q, want empty (no meta file)", sa.AgentName)
+	}
+	if sa.AgentType != "" {
+		t.Errorf("AgentType = %q, want empty (no meta file)", sa.AgentType)
+	}
+	if sa.Model != "claude-sonnet-4-6" {
+		t.Errorf("Model = %q, want claude-sonnet-4-6", sa.Model)
+	}
+	if sa.TokenUsage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", sa.TokenUsage.InputTokens)
+	}
+}
+
 // TestLoadSubagentsWithFixture verifies LoadSubagents against the test fixture.
 func TestLoadSubagentsWithFixture(t *testing.T) {
 	// The fixture is at testdata/subagent/agent-abc123.jsonl

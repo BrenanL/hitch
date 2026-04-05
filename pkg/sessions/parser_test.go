@@ -437,6 +437,93 @@ func TestDefaultProblemConfig(t *testing.T) {
 	}
 }
 
+// TestParseSessionFileNotFound verifies that ParseSession returns an error for
+// a missing file (not a panic or empty session).
+func TestParseSessionFileNotFound(t *testing.T) {
+	_, err := ParseSession("/nonexistent/path/no-such-session.jsonl", nil, nil)
+	if err == nil {
+		t.Error("expected error for missing file, got nil")
+	}
+}
+
+// TestParseSessionWithCostWrapper verifies that ParseSessionWithCost delegates
+// to ParseSession with the provided estimator.
+func TestParseSessionWithCostWrapper(t *testing.T) {
+	var called bool
+	estimator := func(model string, in, out, cacheRead, cacheCreate int) float64 {
+		called = true
+		return 1.234
+	}
+	ps, err := ParseSessionWithCost(testDataPath("simple.jsonl"), estimator)
+	if err != nil {
+		t.Fatalf("ParseSessionWithCost: %v", err)
+	}
+	if !called {
+		t.Error("cost estimator was not called via ParseSessionWithCost")
+	}
+	if ps.TokenUsage.EstimatedCost != 1.234 {
+		t.Errorf("EstimatedCost = %v, want 1.234", ps.TokenUsage.EstimatedCost)
+	}
+}
+
+// TestStreamingPartialChunksSkipped verifies that assistant messages with no
+// stop_reason (streaming partial chunks) are not added to Messages.
+func TestStreamingPartialChunksSkipped(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl")
+
+	// First line: no stop_reason (streaming partial) — should be skipped.
+	// Second line: same message ID with stop_reason set — should be kept.
+	content := `{"type":"assistant","uuid":"a1","sessionId":"f1b2c3d4-e5f6-7890-abcd-ef1234567890","timestamp":"2026-04-04T10:00:00.000Z","isSidechain":false,"message":{"id":"msg_stream01","role":"assistant","model":"claude-sonnet-4-6","stop_reason":null,"content":[{"type":"text","text":"partial..."}],"usage":{"input_tokens":5,"output_tokens":2,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"assistant","uuid":"a2","sessionId":"f1b2c3d4-e5f6-7890-abcd-ef1234567890","timestamp":"2026-04-04T10:00:01.000Z","isSidechain":false,"message":{"id":"msg_stream01","role":"assistant","model":"claude-sonnet-4-6","stop_reason":"end_turn","content":[{"type":"text","text":"partial...final"}],"usage":{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ps, err := ParseSession(path, nil, nil)
+	if err != nil {
+		t.Fatalf("ParseSession: %v", err)
+	}
+
+	assistantCount := 0
+	for _, m := range ps.Messages {
+		if m.Role == "assistant" {
+			assistantCount++
+		}
+	}
+	if assistantCount != 1 {
+		t.Errorf("assistant messages = %d, want 1 (partial chunk must be skipped)", assistantCount)
+	}
+}
+
+// TestFileReadCountsAllFileTools verifies that FileReadCounts accumulates paths
+// from all file-touching tools (Read, Edit, Write, Glob, Grep), not only Read.
+func TestFileReadCountsAllFileTools(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "g1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl")
+
+	// One assistant message with Read + Edit + Write on the same file.
+	content := `{"type":"assistant","uuid":"a1","sessionId":"g1b2c3d4-e5f6-7890-abcd-ef1234567890","timestamp":"2026-04-04T10:00:00.000Z","isSidechain":false,"message":{"id":"msg_fc01","role":"assistant","model":"claude-sonnet-4-6","stop_reason":"tool_use","content":[{"type":"tool_use","id":"tu_r","name":"Read","input":{"file_path":"/home/user/foo.go"}},{"type":"tool_use","id":"tu_e","name":"Edit","input":{"file_path":"/home/user/bar.go","old_string":"x","new_string":"y"}},{"type":"tool_use","id":"tu_w","name":"Write","input":{"file_path":"/home/user/baz.go"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"user","uuid":"u1","sessionId":"g1b2c3d4-e5f6-7890-abcd-ef1234567890","timestamp":"2026-04-04T10:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_r","content":"content","is_error":false},{"type":"tool_result","tool_use_id":"tu_e","content":"ok","is_error":false},{"type":"tool_result","tool_use_id":"tu_w","content":"ok","is_error":false}]}}
+`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ps, err := ParseSession(path, nil, nil)
+	if err != nil {
+		t.Fatalf("ParseSession: %v", err)
+	}
+
+	// All three file paths should be in FileReadCounts.
+	for _, fp := range []string{"/home/user/foo.go", "/home/user/bar.go", "/home/user/baz.go"} {
+		if ps.FileReadCounts[fp] == 0 {
+			t.Errorf("FileReadCounts[%q] = 0, want > 0", fp)
+		}
+	}
+}
+
 // TestParseTimestamp verifies both timestamp formats.
 func TestParseTimestamp(t *testing.T) {
 	// ISO 8601
