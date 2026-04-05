@@ -81,6 +81,37 @@ func (s *DB) EventQuery(f EventFilter) ([]Event, error) {
 	return events, rows.Err()
 }
 
+// QueryStopFailureEvents returns StopFailure hook events within the given time window.
+// since and until are ISO timestamps. If until is empty, no upper bound is applied.
+func (s *DB) QueryStopFailureEvents(since, until string) ([]Event, error) {
+	query := `SELECT id, session_id, hook_event, COALESCE(rule_id, ''), COALESCE(tool_name, ''), COALESCE(action_taken, ''), COALESCE(duration_ms, 0), timestamp
+		FROM events
+		WHERE hook_event = 'StopFailure' AND timestamp >= ?`
+	args := []any{since}
+
+	if until != "" {
+		query += ` AND timestamp <= ?`
+		args = append(args, until)
+	}
+	query += ` ORDER BY timestamp ASC`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying StopFailure events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.HookEvent, &e.RuleID, &e.ToolName, &e.ActionTaken, &e.DurationMs, &e.Timestamp); err != nil {
+			return nil, fmt.Errorf("scanning event: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
 func nilIfEmpty(s string) any {
 	if s == "" {
 		return nil

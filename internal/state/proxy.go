@@ -1,6 +1,9 @@
 package state
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // APIRequest represents a logged API request from the proxy.
 type APIRequest struct {
@@ -275,6 +278,75 @@ func (s *DB) ListSessions(limit int) ([]SessionInfo, error) {
 			return nil, fmt.Errorf("scanning session: %w", err)
 		}
 		results = append(results, si)
+	}
+	return results, rows.Err()
+}
+
+// parseTimestamp parses an ISO timestamp string in RFC3339 or truncated form.
+func parseTimestamp(ts string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, ts); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse timestamp %q", ts)
+}
+
+// QueryRequestsNear returns api_requests for the given session within ±windowSec seconds
+// of the given timestamp. If sessionID is empty, all sessions are searched.
+func (s *DB) QueryRequestsNear(timestamp string, windowSec int, sessionID string) ([]APIRequest, error) {
+	t, err := parseTimestamp(timestamp)
+	if err != nil {
+		return nil, fmt.Errorf("QueryRequestsNear: %w", err)
+	}
+	window := time.Duration(windowSec) * time.Second
+	lo := t.Add(-window).UTC().Format("2006-01-02T15:04:05")
+	hi := t.Add(+window).UTC().Format("2006-01-02T15:04:05")
+
+	query := `SELECT
+		id, timestamp, COALESCE(request_id, ''), COALESCE(session_id, ''),
+		COALESCE(model, ''), COALESCE(http_method, ''), http_status,
+		input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+		latency_ms, COALESCE(stop_reason, ''), streaming,
+		COALESCE(endpoint, ''), COALESCE(error, ''),
+		microcompact_count, truncated_results, total_tool_result_size,
+		COALESCE(request_headers, ''), COALESCE(response_headers, ''),
+		request_body_size, response_body_size,
+		COALESCE(request_log_path, ''), COALESCE(response_log_path, ''),
+		message_count
+	FROM api_requests
+	WHERE timestamp >= ? AND timestamp <= ?`
+	args := []any{lo, hi}
+
+	if sessionID != "" {
+		query += ` AND session_id = ?`
+		args = append(args, sessionID)
+	}
+	query += ` ORDER BY timestamp ASC`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying requests near %s: %w", timestamp, err)
+	}
+	defer rows.Close()
+
+	var results []APIRequest
+	for rows.Next() {
+		var r APIRequest
+		if err := rows.Scan(
+			&r.ID, &r.Timestamp, &r.RequestID, &r.SessionID,
+			&r.Model, &r.HTTPMethod, &r.HTTPStatus,
+			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheCreationTokens,
+			&r.LatencyMS, &r.StopReason, &r.Streaming, &r.Endpoint, &r.Error,
+			&r.MicrocompactCount, &r.TruncatedResults, &r.TotalToolResultSize,
+			&r.RequestHeaders, &r.ResponseHeaders,
+			&r.RequestBodySize, &r.ResponseBodySize,
+			&r.RequestLogPath, &r.ResponseLogPath,
+			&r.MessageCount,
+		); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+		results = append(results, r)
 	}
 	return results, rows.Err()
 }

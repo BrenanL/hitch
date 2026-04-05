@@ -5,6 +5,53 @@ import (
 	"time"
 )
 
+func TestQueryStopFailureEvents(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+
+	events := []Event{
+		{SessionID: "sess1", HookEvent: "StopFailure", Timestamp: now.Add(-10 * time.Minute).Format(time.RFC3339)},
+		{SessionID: "sess2", HookEvent: "StopFailure", Timestamp: now.Add(-5 * time.Minute).Format(time.RFC3339)},
+		{SessionID: "sess3", HookEvent: "Stop", Timestamp: now.Add(-3 * time.Minute).Format(time.RFC3339)},
+		{SessionID: "sess1", HookEvent: "StopFailure", Timestamp: now.Add(-1 * time.Minute).Format(time.RFC3339)},
+	}
+	for _, e := range events {
+		if err := db.EventLog(e); err != nil {
+			t.Fatalf("EventLog: %v", err)
+		}
+	}
+
+	// Query all StopFailure events — should get 3, not the Stop event.
+	since := now.Add(-30 * time.Minute).Format(time.RFC3339)
+	got, err := db.QueryStopFailureEvents(since, "")
+	if err != nil {
+		t.Fatalf("QueryStopFailureEvents: %v", err)
+	}
+	if len(got) != 3 {
+		t.Errorf("QueryStopFailureEvents: got %d events, want 3", len(got))
+	}
+	for _, e := range got {
+		if e.HookEvent != "StopFailure" {
+			t.Errorf("got non-StopFailure event: %q", e.HookEvent)
+		}
+	}
+
+	// Query with a narrow since window — only the most recent StopFailure.
+	narrowSince := now.Add(-3 * time.Minute).Format(time.RFC3339)
+	narrow, err := db.QueryStopFailureEvents(narrowSince, "")
+	if err != nil {
+		t.Fatalf("QueryStopFailureEvents (narrow): %v", err)
+	}
+	if len(narrow) != 1 {
+		t.Errorf("QueryStopFailureEvents (narrow): got %d events, want 1", len(narrow))
+	}
+}
+
 func TestEventLogAndQuery(t *testing.T) {
 	db, err := OpenInMemory()
 	if err != nil {

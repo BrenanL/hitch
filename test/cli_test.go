@@ -629,6 +629,40 @@ func TestCLIFullWorkflow(t *testing.T) {
 	_ = out // log output depends on whether events are visible (may be empty if no session filter)
 }
 
+func TestCLIProxyGaps(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Init so the DB exists.
+	out, err := env.run("init", "--global")
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+
+	// With no events and no proxy log entries, gaps should report no gaps.
+	out, err = env.run("proxy", "gaps", "--since", "1h")
+	if err != nil {
+		t.Fatalf("proxy gaps (empty): %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "No gaps") {
+		t.Errorf("proxy gaps (empty): expected 'No gaps' message, got: %q", out)
+	}
+}
+
+func TestCLIProxyGapsHelp(t *testing.T) {
+	env := setupTestEnv(t)
+
+	out, err := env.run("proxy", "gaps", "--help")
+	if err != nil {
+		t.Fatalf("proxy gaps --help: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "--since") {
+		t.Errorf("proxy gaps --help missing --since flag, got: %q", out)
+	}
+	if !strings.Contains(out, "--session") {
+		t.Errorf("proxy gaps --help missing --session flag, got: %q", out)
+	}
+}
+
 // --- Helpers ---
 
 // extractRuleID parses the rule ID from "Rule abc123 added: ..." output.
