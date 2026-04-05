@@ -94,6 +94,10 @@ func (l *Lexer) nextToken() (Token, error) {
 		return Token{Type: TokenLT, Value: "<", Line: startLine, Col: startCol}, nil
 	case '=':
 		l.advance()
+		if l.pos < len(l.input) && l.input[l.pos] == '=' {
+			l.advance()
+			return Token{Type: TokenEQEQ, Value: "==", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TokenEQ, Value: "=", Line: startLine, Col: startCol}, nil
 	}
 
@@ -154,6 +158,14 @@ func (l *Lexer) scanNumber() Token {
 	startLine, startCol := l.line, l.col
 	for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
 		l.advance()
+	}
+	// Check for decimal point (float literal)
+	if l.pos < len(l.input) && l.input[l.pos] == '.' {
+		l.advance()
+		for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+			l.advance()
+		}
+		return Token{Type: TokenNumber, Value: l.input[start:l.pos], Line: startLine, Col: startCol}
 	}
 	// Check for duration suffix (s, m, h)
 	if l.pos < len(l.input) && (l.input[l.pos] == 's' || l.input[l.pos] == 'm' || l.input[l.pos] == 'h') {

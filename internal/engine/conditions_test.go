@@ -196,6 +196,121 @@ func TestEvalFocusAway(t *testing.T) {
 	}
 }
 
+func TestEvalBurnRate(t *testing.T) {
+	ctx := &EvalContext{BurnRate: 1200.0}
+
+	// burn_rate > 1000 — should be true
+	cond := dsl.BurnRateCondition{Op: ">", Threshold: 1000.0}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for burn_rate > 1000 when rate is 1200")
+	}
+
+	// burn_rate > 1500 — should be false
+	cond = dsl.BurnRateCondition{Op: ">", Threshold: 1500.0}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for burn_rate > 1500 when rate is 1200")
+	}
+
+	// burn_rate < 1500 — should be true
+	cond = dsl.BurnRateCondition{Op: "<", Threshold: 1500.0}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for burn_rate < 1500 when rate is 1200")
+	}
+}
+
+func TestEvalModel(t *testing.T) {
+	ctx := &EvalContext{Model: "claude-opus-4-5"}
+
+	// model contains "opus" — should be true (case-insensitive)
+	cond := dsl.ModelCondition{Substring: "opus"}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for model contains 'opus'")
+	}
+
+	// model contains "sonnet" — should be false
+	cond = dsl.ModelCondition{Substring: "sonnet"}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for model contains 'sonnet'")
+	}
+
+	// empty model — should be false
+	emptyCtx := &EvalContext{Model: ""}
+	cond = dsl.ModelCondition{Substring: "opus"}
+	if EvalCondition(cond, emptyCtx) {
+		t.Error("expected false when model is empty")
+	}
+}
+
+func TestEvalContextSize(t *testing.T) {
+	ctx := &EvalContext{ContextSize: 150000}
+
+	// context_size > 100000 — should be true
+	cond := dsl.ContextSizeCondition{Op: ">", Threshold: 100000}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for context_size > 100000 when size is 150000")
+	}
+
+	// context_size > 200000 — should be false
+	cond = dsl.ContextSizeCondition{Op: ">", Threshold: 200000}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for context_size > 200000 when size is 150000")
+	}
+
+	// context_size < 200000 — should be true
+	cond = dsl.ContextSizeCondition{Op: "<", Threshold: 200000}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for context_size < 200000 when size is 150000")
+	}
+}
+
+func TestEvalContextUsage(t *testing.T) {
+	ctx := &EvalContext{ContextUsage: 85.0}
+
+	// context_usage > 80 — should be true
+	cond := dsl.ContextUsageCondition{Op: ">", Threshold: 80.0}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for context_usage > 80 when usage is 85")
+	}
+
+	// context_usage > 90 — should be false
+	cond = dsl.ContextUsageCondition{Op: ">", Threshold: 90.0}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for context_usage > 90 when usage is 85")
+	}
+}
+
+func TestEvalErrorType(t *testing.T) {
+	ctx := &EvalContext{ErrorType: "rate_limit"}
+
+	// error_type == "rate_limit" — should be true
+	cond := dsl.FieldEqCondition{Field: "error_type", Value: "rate_limit"}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for error_type == 'rate_limit'")
+	}
+
+	// error_type == "billing_error" — should be false
+	cond = dsl.FieldEqCondition{Field: "error_type", Value: "billing_error"}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for error_type == 'billing_error' when type is 'rate_limit'")
+	}
+}
+
+func TestEvalTaskStatus(t *testing.T) {
+	ctx := &EvalContext{TaskStatus: "completed"}
+
+	// task_status == "completed" — should be true
+	cond := dsl.FieldEqCondition{Field: "task_status", Value: "completed"}
+	if !EvalCondition(cond, ctx) {
+		t.Error("expected true for task_status == 'completed'")
+	}
+
+	// task_status == "failed" — should be false
+	cond = dsl.FieldEqCondition{Field: "task_status", Value: "failed"}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for task_status == 'failed' when status is 'completed'")
+	}
+}
+
 func TestEvalFocusIdle(t *testing.T) {
 	ctx := &EvalContext{
 		LastPrompt: time.Now().Add(-120 * time.Second),
