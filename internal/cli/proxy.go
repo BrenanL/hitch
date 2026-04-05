@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/BrenanL/hitch/internal/proxy"
+	"github.com/BrenanL/hitch/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +40,8 @@ model, cost, and latency. Detects context stripping and tool result truncation b
 		newProxyStatsCmd(),
 		newProxyInspectCmd(),
 		newProxySessionsCmd(),
+		newProxySessionCmd(),
+		newProxyAnalyzeCmd(),
 		newProxyInstallCmd(),
 		newProxyUpdatePricingCmd(),
 	)
@@ -428,6 +431,371 @@ func runProxySessions(cmd *cobra.Command, args []string) error {
 			sessID, s.RequestCount, first, last, total, cost)
 	}
 	return nil
+}
+
+// --- session (single session drill-down) ---
+
+func newProxySessionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "session <session-id>",
+		Short: "Show full transaction list for a session",
+		Long:  "Displays a session summary and complete chronological transaction list. Accepts session ID prefix (first 4+ characters).",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runProxySession,
+	}
+	cmd.Flags().BoolP("verbose", "v", false, "Show full detail per request")
+	return cmd
+}
+
+func runProxySession(cmd *cobra.Command, args []string) error {
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	prefix := args[0]
+
+	db, _, err := openDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	pricing := proxy.LoadPricing()
+
+	// Resolve session ID prefix
+	sessions, err := db.ListSessions(500)
+	if err != nil {
+		return err
+	}
+	session, err := matchSession(sessions, prefix)
+	if err != nil {
+		return err
+	}
+
+	// Fetch all transactions
+	requests, err := db.QuerySessionRequests(session.SessionID)
+	if err != nil {
+		return err
+	}
+	if len(requests) == 0 {
+		fmt.Println("No transactions found for this session.")
+		return nil
+	}
+
+	// Compute summary
+	var totalInput, totalOutput, totalCacheRead, totalCacheCreate int64
+	var totalCost float64
+	var totalMC, totalTR int
+	models := map[string]bool{}
+	for _, r := range requests {
+		totalInput += int64(r.InputTokens)
+		totalOutput += int64(r.OutputTokens)
+		totalCacheRead += int64(r.CacheReadTokens)
+		totalCacheCreate += int64(r.CacheCreationTokens)
+		totalCost += pricing.EstimateCost(r.Model, r.InputTokens, r.OutputTokens,
+			r.CacheReadTokens, r.CacheCreationTokens)
+		totalMC += r.MicrocompactCount
+		totalTR += r.TruncatedResults
+		if r.Model != "" {
+			models[r.Model] = true
+		}
+	}
+
+	cacheHit := 0.0
+	totalInputAll := totalInput + totalCacheRead
+	if totalInputAll > 0 {
+		cacheHit = float64(totalCacheRead) / float64(totalInputAll) * 100
+	}
+
+	// Parse timestamps for duration
+	first := requests[0].Timestamp
+	last := requests[len(requests)-1].Timestamp
+	firstTime := first
+	lastTime := last
+	if len(firstTime) > 8 && len(lastTime) > 8 {
+		if idx := strings.Index(firstTime, "T"); idx > 0 {
+			firstTime = firstTime[idx+1:]
+		}
+		if idx := strings.Index(lastTime, "T"); idx > 0 {
+			lastTime = lastTime[idx+1:]
+		}
+		if len(firstTime) > 8 {
+			firstTime = firstTime[:8]
+		}
+		if len(lastTime) > 8 {
+			lastTime = lastTime[:8]
+		}
+	}
+
+	var modelList []string
+	for m := range models {
+		modelList = append(modelList, m)
+	}
+
+	// Print session summary
+	fmt.Printf("Session:  %s\n", session.SessionID)
+	fmt.Printf("Duration: %s -- %s\n", firstTime, lastTime)
+	fmt.Printf("Requests: %d     Cost: $%.4f     Cache Hit: %.1f%%\n\n",
+		len(requests), totalCost, cacheHit)
+
+	fmt.Printf("Tokens:\n")
+	fmt.Printf("  Input:         %d\n", totalInput)
+	fmt.Printf("  Output:        %d\n", totalOutput)
+	fmt.Printf("  Cache Read:    %d\n", totalCacheRead)
+	fmt.Printf("  Cache Create:  %d\n", totalCacheCreate)
+
+	if len(modelList) > 0 {
+		fmt.Printf("\nModels:  %s\n", strings.Join(modelList, ", "))
+	}
+
+	if totalMC > 0 || totalTR > 0 {
+		fmt.Printf("\nBugs:\n")
+		if totalMC > 0 {
+			fmt.Printf("  Microcompact:  %d\n", totalMC)
+		}
+		if totalTR > 0 {
+			fmt.Printf("  Truncated:     %d\n", totalTR)
+		}
+	}
+
+	fmt.Println()
+
+	// Print transaction table
+	if verbose {
+		for i, r := range requests {
+			cost := pricing.EstimateCost(r.Model, r.InputTokens, r.OutputTokens,
+				r.CacheReadTokens, r.CacheCreationTokens)
+			fmt.Printf("[%d] %s  %s %s %d  model=%s  in=%d out=%d cr=%d cw=%d  $%.4f  %dms  %s",
+				i+1, r.Timestamp, r.HTTPMethod, r.Endpoint, r.HTTPStatus,
+				r.Model, r.InputTokens, r.OutputTokens,
+				r.CacheReadTokens, r.CacheCreationTokens,
+				cost, r.LatencyMS, r.StopReason)
+			if r.MicrocompactCount > 0 {
+				fmt.Printf("  mc:%d", r.MicrocompactCount)
+			}
+			if r.TruncatedResults > 0 {
+				fmt.Printf("  tr:%d", r.TruncatedResults)
+			}
+			if r.Error != "" {
+				fmt.Printf("  err=%s", r.Error)
+			}
+			fmt.Println()
+		}
+		return nil
+	}
+
+	// Compact table
+	fmt.Printf("%4s  %-8s  %-16s %5s %6s %7s %8s %9s %6s %-9s %s\n",
+		"#", "TIME", "MODEL", "IN", "OUT", "C_READ", "C_CREATE", "COST", "MS", "STOP", "FLAGS")
+
+	for i, r := range requests {
+		ts := r.Timestamp
+		if idx := strings.Index(ts, "T"); idx > 0 {
+			ts = ts[idx+1:]
+		}
+		if len(ts) > 8 {
+			ts = ts[:8]
+		}
+
+		model := r.Model
+		if strings.HasPrefix(model, "claude-") {
+			model = strings.TrimPrefix(model, "claude-")
+		}
+		if len(model) > 16 {
+			model = model[:16]
+		}
+
+		cost := pricing.EstimateCost(r.Model, r.InputTokens, r.OutputTokens,
+			r.CacheReadTokens, r.CacheCreationTokens)
+
+		flags := ""
+		if r.MicrocompactCount > 0 {
+			flags += fmt.Sprintf("mc:%d ", r.MicrocompactCount)
+		}
+		if r.TruncatedResults > 0 {
+			flags += fmt.Sprintf("tr:%d ", r.TruncatedResults)
+		}
+		if r.Error != "" && r.StopReason == "" {
+			errShort := r.Error
+			if len(errShort) > 12 {
+				errShort = errShort[:12]
+			}
+			flags += errShort
+		}
+
+		fmt.Printf("%4d  %-8s  %-16s %5d %6d %7d %8d $%8.4f %6d %-9s %s\n",
+			i+1, ts, model, r.InputTokens, r.OutputTokens,
+			r.CacheReadTokens, r.CacheCreationTokens, cost, r.LatencyMS,
+			r.StopReason, flags)
+	}
+	return nil
+}
+
+func matchSession(sessions []state.SessionInfo, prefix string) (state.SessionInfo, error) {
+	var matches []state.SessionInfo
+	for _, s := range sessions {
+		if strings.HasPrefix(s.SessionID, prefix) {
+			matches = append(matches, s)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return state.SessionInfo{}, fmt.Errorf("no session found matching %q", prefix)
+	case 1:
+		return matches[0], nil
+	default:
+		var ids []string
+		for _, m := range matches {
+			id := m.SessionID
+			if len(id) > 20 {
+				id = id[:20] + "..."
+			}
+			ids = append(ids, id)
+		}
+		return state.SessionInfo{}, fmt.Errorf("ambiguous prefix %q matches %d sessions:\n  %s\nProvide more characters to disambiguate",
+			prefix, len(matches), strings.Join(ids, "\n  "))
+	}
+}
+
+// --- analyze ---
+
+func newProxyAnalyzeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "analyze <id>",
+		Short: "Analyze request body content composition",
+		Long: `Reads the transaction log file for a request and produces a detailed breakdown
+of the content: system prompt, messages, tool definitions, tool uses/results,
+file reads, and a composition percentage. Use --json for structured output.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runProxyAnalyze,
+	}
+	cmd.Flags().Bool("json", false, "Output as structured JSON (for agent consumption)")
+	return cmd
+}
+
+func runProxyAnalyze(cmd *cobra.Command, args []string) error {
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid request ID: %w", err)
+	}
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+
+	db, _, err := openDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	req, err := db.GetRequest(id)
+	if err != nil {
+		return fmt.Errorf("request %d not found: %w", id, err)
+	}
+
+	if req.RequestLogPath == "" {
+		return fmt.Errorf("no request log file for request %d", id)
+	}
+
+	analysis, err := proxy.AnalyzeRequestBody(req.RequestLogPath)
+	if err != nil {
+		return fmt.Errorf("analyzing request: %w", err)
+	}
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent(analysis, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	}
+
+	// Human-readable output
+	fmt.Printf("Request #%d Analysis\n", id)
+	fmt.Printf("Model: %s\n\n", analysis.Model)
+
+	fmt.Printf("System Prompt:\n")
+	fmt.Printf("  Blocks:     %d\n", analysis.System.BlockCount)
+	fmt.Printf("  Size:       %s\n", formatBytes(analysis.System.TotalSizeBytes))
+	if len(analysis.System.Types) > 0 {
+		fmt.Printf("  Types:      ")
+		i := 0
+		for typ, count := range analysis.System.Types {
+			if i > 0 {
+				fmt.Printf(", ")
+			}
+			fmt.Printf("%s(%d)", typ, count)
+			i++
+		}
+		fmt.Println()
+	}
+
+	fmt.Printf("\nMessages:\n")
+	fmt.Printf("  Total:      %d\n", analysis.Messages.Total)
+	fmt.Printf("  Turns:      %d\n", analysis.Messages.ConversationTurns)
+	fmt.Printf("  Size:       %s\n", formatBytes(analysis.Messages.TotalSizeBytes))
+	if len(analysis.Messages.ByRole) > 0 {
+		fmt.Printf("  By role:    ")
+		i := 0
+		for role, count := range analysis.Messages.ByRole {
+			if i > 0 {
+				fmt.Printf(", ")
+			}
+			fmt.Printf("%s(%d)", role, count)
+			i++
+		}
+		fmt.Println()
+	}
+
+	if analysis.Tools.Count > 0 {
+		fmt.Printf("\nTool Definitions: %d\n", analysis.Tools.Count)
+		fmt.Printf("  Size:       %s\n", formatBytes(analysis.Tools.TotalSizeBytes))
+		if len(analysis.Tools.Names) > 0 {
+			max := 15
+			names := analysis.Tools.Names
+			if len(names) > max {
+				names = append(names[:max], fmt.Sprintf("... +%d more", len(analysis.Tools.Names)-max))
+			}
+			fmt.Printf("  Names:      %s\n", strings.Join(names, ", "))
+		}
+	}
+
+	if analysis.ToolUses.Count > 0 {
+		fmt.Printf("\nTool Uses: %d\n", analysis.ToolUses.Count)
+		for tool, count := range analysis.ToolUses.ByTool {
+			fmt.Printf("  %-20s %d\n", tool, count)
+		}
+	}
+
+	if analysis.ToolResults.Count > 0 {
+		fmt.Printf("\nTool Results: %d\n", analysis.ToolResults.Count)
+		fmt.Printf("  Total size: %s\n", formatBytes(analysis.ToolResults.TotalSizeBytes))
+		fmt.Printf("  Avg size:   %s\n", formatBytes(analysis.ToolResults.AvgSizeBytes))
+	}
+
+	if len(analysis.FileReads) > 0 {
+		fmt.Printf("\nFile Reads: %d\n", len(analysis.FileReads))
+		max := 20
+		for i, f := range analysis.FileReads {
+			if i >= max {
+				fmt.Printf("  ... +%d more\n", len(analysis.FileReads)-max)
+				break
+			}
+			fmt.Printf("  %s\n", f)
+		}
+	}
+
+	fmt.Printf("\nComposition:\n")
+	fmt.Printf("  System:       %5.1f%%\n", analysis.Composition.SystemPercent)
+	fmt.Printf("  Conversation: %5.1f%%\n", analysis.Composition.ConversationPercent)
+	fmt.Printf("  Tool Results: %5.1f%%\n", analysis.Composition.ToolResultPercent)
+	fmt.Printf("  Tool Defs:    %5.1f%%\n", analysis.Composition.ToolDefPercent)
+
+	return nil
+}
+
+func formatBytes(b int) string {
+	switch {
+	case b >= 1_000_000:
+		return fmt.Sprintf("%.1f MB", float64(b)/1_000_000)
+	case b >= 1_000:
+		return fmt.Sprintf("%.1f KB", float64(b)/1_000)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // --- stats ---

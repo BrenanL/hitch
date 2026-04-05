@@ -278,3 +278,43 @@ func (s *DB) ListSessions(limit int) ([]SessionInfo, error) {
 	}
 	return results, rows.Err()
 }
+
+// QuerySessionRequests returns all requests for a session, ordered chronologically.
+func (s *DB) QuerySessionRequests(sessionID string) ([]APIRequest, error) {
+	rows, err := s.db.Query(`SELECT
+		id, timestamp, COALESCE(request_id, ''), COALESCE(session_id, ''),
+		COALESCE(model, ''), COALESCE(http_method, ''), http_status,
+		input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+		latency_ms, COALESCE(stop_reason, ''), streaming,
+		COALESCE(endpoint, ''), COALESCE(error, ''),
+		microcompact_count, truncated_results, total_tool_result_size,
+		COALESCE(request_headers, ''), COALESCE(response_headers, ''),
+		request_body_size, response_body_size,
+		COALESCE(request_log_path, ''), COALESCE(response_log_path, ''),
+		message_count
+	FROM api_requests WHERE session_id = ? ORDER BY id ASC`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("querying session requests: %w", err)
+	}
+	defer rows.Close()
+
+	var results []APIRequest
+	for rows.Next() {
+		var r APIRequest
+		if err := rows.Scan(
+			&r.ID, &r.Timestamp, &r.RequestID, &r.SessionID,
+			&r.Model, &r.HTTPMethod, &r.HTTPStatus,
+			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheCreationTokens,
+			&r.LatencyMS, &r.StopReason, &r.Streaming, &r.Endpoint, &r.Error,
+			&r.MicrocompactCount, &r.TruncatedResults, &r.TotalToolResultSize,
+			&r.RequestHeaders, &r.ResponseHeaders,
+			&r.RequestBodySize, &r.ResponseBodySize,
+			&r.RequestLogPath, &r.ResponseLogPath,
+			&r.MessageCount,
+		); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}

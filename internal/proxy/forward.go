@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -17,9 +18,13 @@ var hopByHopHeaders = []string{
 // forwardRequest clones the incoming request and sends it to the upstream API.
 func (s *Server) forwardRequest(r *http.Request) (*http.Response, error) {
 	upstream := r.Clone(r.Context())
-	upstream.URL.Scheme = "https"
-	upstream.URL.Host = "api.anthropic.com"
-	upstream.Host = "api.anthropic.com"
+	parsed, err := url.Parse(s.upstream)
+	if err != nil {
+		return nil, fmt.Errorf("parsing upstream URL: %w", err)
+	}
+	upstream.URL.Scheme = parsed.Scheme
+	upstream.URL.Host = parsed.Host
+	upstream.Host = parsed.Host
 	upstream.RequestURI = "" // must clear for http.Client
 
 	for _, h := range hopByHopHeaders {

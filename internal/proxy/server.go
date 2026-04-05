@@ -59,16 +59,23 @@ type Server struct {
 	txlog      *TransactionLogger
 }
 
-// NewServer creates a new proxy server.
-func NewServer(port int, db *state.DB) *Server {
+// NewServerWithUpstream creates a proxy server with a custom upstream URL and log directory.
+func NewServerWithUpstream(port int, db *state.DB, upstream string, logDir string) *Server {
 	home, _ := os.UserHomeDir()
 	return &Server{
 		port:     port,
-		upstream: "https://api.anthropic.com",
+		upstream: upstream,
 		db:       db,
 		pidFile:  filepath.Join(home, ".hitch", "proxy.pid"),
-		txlog:    NewTransactionLogger(),
+		txlog:    NewTransactionLoggerWithDir(logDir),
 	}
+}
+
+// NewServer creates a new proxy server with default upstream and log directory.
+func NewServer(port int, db *state.DB) *Server {
+	home, _ := os.UserHomeDir()
+	return NewServerWithUpstream(port, db, "https://api.anthropic.com",
+		filepath.Join(home, ".hitch", "proxy-logs"))
 }
 
 // Start starts the proxy server and blocks until SIGINT/SIGTERM.

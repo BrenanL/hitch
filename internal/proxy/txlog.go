@@ -17,12 +17,15 @@ type TransactionLogger struct {
 	counter atomic.Int64
 }
 
+// NewTransactionLoggerWithDir creates a logger that writes to the given directory.
+func NewTransactionLoggerWithDir(dir string) *TransactionLogger {
+	return &TransactionLogger{baseDir: dir}
+}
+
 // NewTransactionLogger creates a logger that writes to ~/.hitch/proxy-logs/.
 func NewTransactionLogger() *TransactionLogger {
 	home, _ := os.UserHomeDir()
-	return &TransactionLogger{
-		baseDir: filepath.Join(home, ".hitch", "proxy-logs"),
-	}
+	return NewTransactionLoggerWithDir(filepath.Join(home, ".hitch", "proxy-logs"))
 }
 
 func (t *TransactionLogger) logDir(ts time.Time) string {

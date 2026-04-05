@@ -169,6 +169,82 @@ SESSION                              REQS  FIRST           LAST            TOKEN
 9d3b2d12-c9fb-4d28-8374-1fc7a9e10c45    1  22:18:11        22:18:11             9 $   0.2747
 ```
 
+### `ht proxy session <session-id> [-v]`
+
+Drill into a single session — full summary and chronological transaction list. Accepts session ID prefix (first 4+ characters).
+
+```
+Session:  5995cc7d-f1a9-411d-9aca-5d1c36e54164
+Duration: 14:30:05 -- 15:15:17
+Requests: 47     Cost: $2.4530     Cache Hit: 92.1%
+
+Tokens:
+  Input:         12450
+  Output:        8320
+  Cache Read:    145000
+  Cache Create:  5200
+
+Models:  claude-opus-4-6
+
+   #  TIME      MODEL            IN    OUT  C_READ C_CREATE      COST     MS STOP      FLAGS
+   1  14:30:05  opus-4-6        150    320   45000    5200 $  0.2340  4500 end_turn
+   2  14:30:52  opus-4-6         50    180   45000       0 $  0.0270  2100 end_turn
+  47  15:15:17  opus-4-6         80    120   32000       0 $  0.0120  1800 end_turn  mc:2
+```
+
+Flags: `-v` verbose (one-line detail per request).
+
+### `ht proxy analyze <id> [--json]`
+
+Analyze the content composition of a request body. Reads the `.req.json` transaction log file and produces a structural breakdown.
+
+```
+Request #10 Analysis
+Model: claude-opus-4-6
+
+System Prompt:
+  Blocks:     3
+  Size:       28.5 KB
+  Types:      text(1), text+cache_control(2)
+
+Messages:
+  Total:      153
+  Turns:      76
+  Size:       661.5 KB
+  By role:    user(77), assistant(76)
+
+Tool Definitions: 28
+  Size:       69.2 KB
+  Names:      Agent, Bash, Read, Edit, Grep, Glob, Write, ...
+
+Tool Uses: 117
+  Bash                 33
+  Read                 24
+  Write                16
+  Edit                 12
+  TaskUpdate           16
+  TaskCreate           10
+  Agent                3
+  ...
+
+Tool Results: 117
+  Total size: 182.5 KB
+  Avg size:   1.6 KB
+
+File Reads: 24
+  /home/user/dev/hitch/internal/proxy/server.go
+  /home/user/dev/hitch/internal/state/proxy.go
+  ...
+
+Composition:
+  System:         3.8%
+  Conversation:  63.1%
+  Tool Results:  24.0%
+  Tool Defs:      9.1%
+```
+
+Use `--json` for structured JSON output suitable for agent consumption. This lets agents query transaction details without reading the full multi-MB request body.
+
 ### `ht proxy stats [--since 1h | --today | --session <id>]`
 
 Aggregate statistics. Cost computed at runtime from token counts and current pricing file.
@@ -262,13 +338,24 @@ internal/proxy/
   cost.go         Pricing file loader, LiteLLM fetcher, cost estimation
   detect.go       Microcompact and budget truncation detection
   txlog.go        Transaction logger — writes full bodies to disk
+  analyze.go      Request body content analysis engine
+
+  cost_test.go    Unit tests: pricing math, file loading, prefix matching
+  detect_test.go  Unit tests: microcompact counting, truncation detection
+  sse_test.go     Unit tests: SSE parsing, non-streaming response parsing
+  txlog_test.go   Unit tests: header sanitization, log file format
+  analyze_test.go Unit tests: content analysis, tool extraction, composition
+
+integration/
+  proxy_integration_test.go  End-to-end tests with fake Anthropic upstream
 
 internal/cli/
-  proxy.go        CLI: start, stop, status, tail, inspect, sessions, stats,
-                  install, update-pricing
+  proxy.go        CLI: start, stop, status, tail, inspect, sessions, session,
+                  analyze, stats, install, update-pricing
 
 internal/state/
-  proxy.go        DB methods: Insert, Query, GetRequest, ListSessions, Stats
+  proxy.go        DB methods: Insert, Query, GetRequest, ListSessions,
+                  QuerySessionRequests, Stats
   migrations.go   Schema v3: api_requests table with full columns
 ```
 
@@ -281,6 +368,9 @@ internal/state/
 | `ht proxy tail -v -n 5` | Verbose one-line detail per request |
 | `ht proxy inspect <id>` | Full deep dive: headers, paths, all fields |
 | `ht proxy sessions` | Sessions with request counts and costs |
+| `ht proxy session <id>` | Full transaction list for a session |
+| `ht proxy analyze <id>` | Content breakdown: system, tools, messages |
+| `ht proxy analyze <id> --json` | Structured JSON for agent consumption |
 | `ht proxy stats --today` | Today's aggregate: cost, cache hit rate |
 | `ht proxy stats --session <id>` | Per-session aggregate |
 | `curl localhost:9800/health` | Quick health check for scripts |

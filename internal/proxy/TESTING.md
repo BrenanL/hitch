@@ -4,7 +4,12 @@ This document outlines what's needed to test the proxy package without hitting t
 
 ## Current state
 
-The proxy package has zero test files. All verification so far has been manual integration testing (start proxy, run `claude -p`, check tail output).
+Test harness implemented. Unit tests in `internal/proxy/*_test.go`, integration tests in `integration/proxy_integration_test.go`.
+
+```bash
+go test ./internal/proxy/... -v -count=1   # 37 unit tests
+go test ./integration/... -v -count=1      # 11 integration tests
+```
 
 ## Test architecture
 
