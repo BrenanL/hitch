@@ -8,22 +8,68 @@ Claude Code hooks are user-defined shell commands, LLM prompts, or agents that e
 
 ## Hook Events
 
-There are 12 hook events covering the full session lifecycle:
+There are 26 hook events covering the full session lifecycle:
+
+### Core Session Events
 
 | Event | When It Fires | Can Block? | Primary Use Cases |
 |---|---|---|---|
 | `SessionStart` | Session begins or resumes | No | Load context, set env vars, inject reminders |
+| `SessionEnd` | Session terminates | No | Cleanup, logging, session summaries |
 | `UserPromptSubmit` | User submits a prompt, before Claude sees it | Yes | Validate prompts, add context, filter input |
+| `Stop` | Claude finishes responding | Yes (block = continue) | Quality gates, notifications, task chaining |
+| `StopFailure` | Claude stops due to an error | No | Error-specific alerting and recovery |
+| `InstructionsLoaded` | CLAUDE.md or instructions file is loaded | No | Audit instructions, inject overrides |
+
+### Tool Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
 | `PreToolUse` | Before a tool call executes | Yes (allow/deny/ask) | Block commands, modify input, auto-approve |
-| `PermissionRequest` | Permission dialog is about to show | Yes (allow/deny) | Auto-approve safe tools, deny dangerous ones |
 | `PostToolUse` | After a tool call succeeds | No (feedback only) | Format code, lint, log, validate output |
 | `PostToolUseFailure` | After a tool call fails | No (feedback only) | Alert on errors, provide corrective context |
-| `Notification` | Claude needs user attention | No | Route alerts to phone, desktop, Slack, etc. |
+| `PermissionRequest` | Permission dialog is about to show | Yes (allow/deny) | Auto-approve safe tools, deny dangerous ones |
+| `PermissionDenied` | A permission request was denied | No | Log denials, notify, adjust behavior |
+
+### Context Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
+| `PreCompact` | Before context compaction | No | Save critical context before it's summarized |
+| `PostCompact` | After context compaction completes | No | Restore context, log compaction details |
+
+### Subagent Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
 | `SubagentStart` | A subagent is spawned | No | Inject context, log agent activity |
 | `SubagentStop` | A subagent finishes | Yes | Chain tasks, validate subagent output |
-| `Stop` | Claude finishes responding | Yes (block = continue) | Quality gates, notifications, task chaining |
-| `PreCompact` | Before context compaction | No | Save critical context before it's summarized |
-| `SessionEnd` | Session terminates | No | Cleanup, logging, session summaries |
+
+### Notification and UI Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
+| `Notification` | Claude needs user attention | No | Route alerts to phone, desktop, Slack, etc. |
+| `Elicitation` | Claude requests input from the user | Yes | Pre-fill responses, filter elicitation requests |
+| `ElicitationResult` | User responds to an elicitation | Yes | Validate user input before Claude sees it |
+
+### Task and Workflow Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
+| `TaskCreated` | A new task is added to the task list | Yes | Validate tasks, enforce naming conventions |
+| `TaskCompleted` | A task is marked done | Yes | Quality gates before marking complete |
+| `TeammateIdle` | A teammate agent has been idle | Yes | Reassign work, send alerts |
+
+### Configuration and Filesystem Events
+
+| Event | When It Fires | Can Block? | Primary Use Cases |
+|---|---|---|---|
+| `ConfigChange` | Claude Code configuration changes | Yes | Audit config changes, enforce policies |
+| `CwdChanged` | Working directory changes | No | Load project-specific context |
+| `FileChanged` | A file in the project changes | No | Trigger linting, tests, or sync |
+| `WorktreeCreate` | A git worktree is created | Yes | Set up worktree environment, enforce policies |
+| `WorktreeRemove` | A git worktree is removed | No | Cleanup, logging |
 
 ### Blocking behavior
 
