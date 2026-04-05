@@ -33,6 +33,36 @@ func TestDefaultBaseline_HasEnvVars(t *testing.T) {
 	}
 }
 
+func TestDefaultBaseline_HasNonEnvKeys(t *testing.T) {
+	m := DefaultBaseline("")
+
+	// Verify effortLevel = "medium".
+	effortRaw, ok := m["effortLevel"]
+	if !ok {
+		t.Fatal("expected 'effortLevel' key in baseline map")
+	}
+	effort, ok := effortRaw.(string)
+	if !ok {
+		t.Fatalf("effortLevel is %T, want string", effortRaw)
+	}
+	if effort != "medium" {
+		t.Errorf("effortLevel = %q, want %q", effort, "medium")
+	}
+
+	// Verify showThinkingSummaries = true.
+	thinkingRaw, ok := m["showThinkingSummaries"]
+	if !ok {
+		t.Fatal("expected 'showThinkingSummaries' key in baseline map")
+	}
+	thinking, ok := thinkingRaw.(bool)
+	if !ok {
+		t.Fatalf("showThinkingSummaries is %T, want bool", thinkingRaw)
+	}
+	if !thinking {
+		t.Error("showThinkingSummaries should be true")
+	}
+}
+
 func TestDefaultBaseline_ProxyURL(t *testing.T) {
 	proxyURL := "http://localhost:9800"
 	m := DefaultBaseline(proxyURL)

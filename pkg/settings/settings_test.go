@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -74,6 +75,9 @@ func TestLoadScope_InvalidJSON(t *testing.T) {
 	_, err := LoadScope(ScopeProject, dir)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "has invalid JSON, refusing to modify") {
+		t.Errorf("error message = %q, want it to contain %q", err.Error(), "has invalid JSON, refusing to modify")
 	}
 }
 
@@ -276,5 +280,65 @@ func TestDeleteKey(t *testing.T) {
 	}
 	if _, ok := result["effortLevel"]; !ok {
 		t.Error("effortLevel key should still be present")
+	}
+}
+
+func TestSetEnv_SetsValue(t *testing.T) {
+	s, err := ParseSettings([]byte(`{}`))
+	if err != nil {
+		t.Fatalf("ParseSettings: %v", err)
+	}
+
+	if err := SetEnv(s, "ANTHROPIC_BASE_URL", "http://localhost:9800"); err != nil {
+		t.Fatalf("SetEnv: %v", err)
+	}
+
+	if s.Env["ANTHROPIC_BASE_URL"] != "http://localhost:9800" {
+		t.Errorf("Env[ANTHROPIC_BASE_URL] = %q, want %q", s.Env["ANTHROPIC_BASE_URL"], "http://localhost:9800")
+	}
+
+	// Verify the value survives marshal round-trip.
+	out, err := MarshalSettings(s)
+	if err != nil {
+		t.Fatalf("MarshalSettings: %v", err)
+	}
+	s2, err := ParseSettings(out)
+	if err != nil {
+		t.Fatalf("ParseSettings round-trip: %v", err)
+	}
+	if s2.Env["ANTHROPIC_BASE_URL"] != "http://localhost:9800" {
+		t.Errorf("round-trip Env[ANTHROPIC_BASE_URL] = %q, want %q", s2.Env["ANTHROPIC_BASE_URL"], "http://localhost:9800")
+	}
+}
+
+func TestDeleteEnv_RemovesValue(t *testing.T) {
+	s, err := ParseSettings([]byte(`{"env":{"KEY1":"val1","KEY2":"val2"}}`))
+	if err != nil {
+		t.Fatalf("ParseSettings: %v", err)
+	}
+
+	DeleteEnv(s, "KEY1")
+
+	if _, ok := s.Env["KEY1"]; ok {
+		t.Error("KEY1 should have been deleted from Env map")
+	}
+	if s.Env["KEY2"] != "val2" {
+		t.Errorf("KEY2 = %q, want %q", s.Env["KEY2"], "val2")
+	}
+
+	// Verify KEY1 is absent after marshal.
+	out, err := MarshalSettings(s)
+	if err != nil {
+		t.Fatalf("MarshalSettings: %v", err)
+	}
+	s2, err := ParseSettings(out)
+	if err != nil {
+		t.Fatalf("ParseSettings round-trip: %v", err)
+	}
+	if _, ok := s2.Env["KEY1"]; ok {
+		t.Error("KEY1 present after DeleteEnv round-trip")
+	}
+	if s2.Env["KEY2"] != "val2" {
+		t.Errorf("round-trip KEY2 = %q, want %q", s2.Env["KEY2"], "val2")
 	}
 }

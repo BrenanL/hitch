@@ -331,6 +331,79 @@ func TestMergeHooks_PreservesUnowned(t *testing.T) {
 	}
 }
 
+// TestCompute_LocalOverridesProject verifies that local scope overrides project scope
+// and project scope overrides user scope for scalar keys.
+func TestCompute_LocalOverridesProject(t *testing.T) {
+	user := makeSettings(t, `{"effortLevel":"low"}`)
+	project := makeSettings(t, `{"effortLevel":"medium"}`)
+	local := makeSettings(t, `{"effortLevel":"high"}`)
+	managed := makeSettings(t, `{}`)
+
+	es := Compute([]*Settings{user, project, local, managed})
+
+	val, scope, ok := es.GetEffective("effortLevel")
+	if !ok {
+		t.Fatal("effortLevel not found in effective settings")
+	}
+	var level string
+	if err := json.Unmarshal(val, &level); err != nil {
+		t.Fatalf("unmarshal effortLevel: %v", err)
+	}
+	if level != "high" {
+		t.Errorf("effortLevel = %q, want %q (local should win over project and user)", level, "high")
+	}
+	if scope != ScopeLocal {
+		t.Errorf("scope = %v, want local", scope)
+	}
+}
+
+// TestCompute_ArrayMerge_Dedup verifies that duplicate entries across scopes appear only once.
+func TestCompute_ArrayMerge_Dedup(t *testing.T) {
+	sharedURL := `"http://shared.example.com"`
+	user := makeSettings(t, `{"allowedHttpHookUrls":["http://shared.example.com","http://user-only.example.com"]}`)
+	project := makeSettings(t, `{"allowedHttpHookUrls":["http://shared.example.com","http://project-only.example.com"]}`)
+	local := makeSettings(t, `{}`)
+	managed := makeSettings(t, `{}`)
+
+	_ = sharedURL
+	es := Compute([]*Settings{user, project, local, managed})
+
+	val, _, ok := es.GetEffective("allowedHttpHookUrls")
+	if !ok {
+		t.Fatal("allowedHttpHookUrls not found in effective settings")
+	}
+	var urls []string
+	if err := json.Unmarshal(val, &urls); err != nil {
+		t.Fatalf("unmarshal allowedHttpHookUrls: %v", err)
+	}
+
+	// Count occurrences of the shared URL — must be exactly 1.
+	count := 0
+	for _, u := range urls {
+		if u == "http://shared.example.com" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("shared URL appears %d times in merged result, want 1 (deduplication failed); urls = %v", count, urls)
+	}
+
+	// Both unique URLs must be present.
+	found := map[string]bool{}
+	for _, u := range urls {
+		found[u] = true
+	}
+	if !found["http://user-only.example.com"] {
+		t.Error("user-only URL missing from merged result")
+	}
+	if !found["http://project-only.example.com"] {
+		t.Error("project-only URL missing from merged result")
+	}
+	if len(urls) != 3 {
+		t.Errorf("len(urls) = %d, want 3 (shared deduped, user-only, project-only); urls = %v", len(urls), urls)
+	}
+}
+
 // TestMergeHooks_PrunesEmpty verifies that empty hook arrays are cleaned up.
 func TestMergeHooks_PrunesEmpty(t *testing.T) {
 	managed := map[string][]MatcherGroup{

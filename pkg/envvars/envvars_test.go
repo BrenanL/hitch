@@ -229,6 +229,40 @@ func TestGenerateEnvBlock_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestValidate_StreamIdleRequiresWatchdog(t *testing.T) {
+	// CLAUDE_STREAM_IDLE_TIMEOUT_MS requires CLAUDE_ENABLE_STREAM_WATCHDOG.
+	issues := validateVars(map[string]string{
+		"CLAUDE_STREAM_IDLE_TIMEOUT_MS": "30000",
+	})
+
+	found := false
+	for _, issue := range issues {
+		if issue.Var == "CLAUDE_STREAM_IDLE_TIMEOUT_MS" && strings.Contains(issue.Message, "CLAUDE_ENABLE_STREAM_WATCHDOG") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about CLAUDE_ENABLE_STREAM_WATCHDOG not being set, got: %v", issues)
+	}
+}
+
+func TestValidate_CleanInput(t *testing.T) {
+	// A valid set of vars with no deprecation, no missing requires, no conflicts.
+	issues := validateVars(map[string]string{
+		"ANTHROPIC_API_KEY":             "sk-test",
+		"ANTHROPIC_BASE_URL":            "http://localhost:9800",
+		"CLAUDE_ENABLE_STREAM_WATCHDOG": "1",
+		"CLAUDE_STREAM_IDLE_TIMEOUT_MS": "30000",
+	})
+
+	for _, issue := range issues {
+		if issue.Level == "error" {
+			t.Errorf("unexpected error for clean input: %+v", issue)
+		}
+	}
+}
+
 func TestResolveEffective_OSWins(t *testing.T) {
 	// Set OS env for a known var
 	t.Setenv("ANTHROPIC_API_KEY", "os-value")
