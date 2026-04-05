@@ -136,28 +136,66 @@ Flags: `-v` verbose (one-line detail per request), `--session <id>` filter by se
 
 ### `ht proxy inspect <id>`
 
-Deep dive into a single request — all fields, headers, file paths:
+Deep dive into a single request — all fields, headers, file paths, and a full token breakdown:
 
 ```
 ID:            2
 Timestamp:     2026-04-04T22:18:11.753
 Session:       9d3b2d12-...
+Request ID:    msg_01XYZ...
 Model:         claude-opus-4-6
+Endpoint:      /v1/messages
 HTTP:          POST 200
+Streaming:     true
+Latency:       4417ms
+Messages:      153
+
 Tokens:
   Input:         3
   Output:        6
   Cache Read:    0
   Cache Create:  27457
   Cost:          $0.2747
+
+Bug Detection:
+  Microcompact:     0
+  Truncated:        0
+  Tool Result Size: 186830 bytes
+
 Request Headers:
   Anthropic-Version: 2023-06-01
   X-Claude-Code-Session-Id: 9d3b2d12-...
   ...
+
+Response Headers:
+  Content-Type: text/event-stream
+  ...
+
 Body Size:     45231 bytes req / 1234 bytes resp
 Request Log:   ~/.hitch/proxy-logs/2026-04-04/221811_000002.req.json
 Response Log:  ~/.hitch/proxy-logs/2026-04-04/221811_000002.resp.log
+
+── Token Breakdown (estimated, chars/4) ──────────────────────────────────────
+  Note: Estimated total 182,400 tok vs actual 3 (~99% off — expected)
+
+  CLAUDE.md (system)                            28,500 tok   15.6%
+  Auto-memory block                              1,200 tok    0.7%
+  Tool definitions (28 tools)                   69,200 tok   38.0%  ◀ DOMINANT
+  Conversation history (153 messages)           61,500 tok   33.8%
+  Tool results                                  21,000 tok   11.5%
+
+── Largest Components ────────────────────────────────────────────────────────
+  File: /home/user/dev/hitch/internal/proxy/server.go    12,400 tok   6.8%
+  File: /home/user/dev/hitch/internal/state/proxy.go      8,200 tok   4.5%
+
+── Tool Calls ────────────────────────────────────────────────────────────────
+  Bash × 33    Read × 24    Write × 16    Edit × 12
+
+── Flags ─────────────────────────────────────────────────────────────────────
+  INFO  Cache read 0.0% — low
 ```
+
+The token breakdown section is appended automatically when a request log file is present. The `Bug Detection` block is only printed when any of the three values are non-zero.
 
 ### `ht proxy sessions [-n 20]`
 
@@ -244,6 +282,50 @@ Composition:
 ```
 
 Use `--json` for structured JSON output suitable for agent consumption. This lets agents query transaction details without reading the full multi-MB request body.
+
+### `ht proxy why <id>`
+
+Natural-language explanation of why a request was expensive. Reads the same breakdown data as `inspect` and produces a single paragraph summarising the dominant cost driver, large file reads, conversation length, and cache health.
+
+```
+Request 10 (182K tok, $3.45): Tool definitions dominated at 38.0% (69K tok estimated).
+3 large file reads consumed most of that: /home/user/dev/hitch/internal/proxy/server.go (12K), /home/user/dev/hitch/internal/state/proxy.go (8K), /home/user/dev/hitch/internal/proxy/analyze.go (6K).
+Conversation history is long at 62000 tok — consider /compact to reduce future costs.
+Cache hit rate was healthy at 92.1% (145K read tokens).
+```
+
+Requires the request log file to be present on disk (`request_log_path` must be set). Will error if the log file is missing.
+
+### `ht proxy gaps [--since 1h] [--session <id>]`
+
+Detects two classes of proxy coverage problems:
+
+1. **Unmatched StopFailure events** — Correlates `StopFailure` hook events (Claude Code session terminations) with proxy log entries. A StopFailure that has no matching proxy entry within ±30 seconds means the API request bypassed the proxy entirely. This indicates `ANTHROPIC_BASE_URL` was not set for that session.
+
+2. **Silent intervals** — Scans all sessions in the window for consecutive requests more than 60 seconds apart. Long silent intervals within an otherwise active session can indicate the agent was making API calls that the proxy did not see.
+
+```
+Analyzing proxy log vs StopFailure events (last 24h)...
+
+  StopFailure events:   5  (hook_event=StopFailure)
+  Matched to proxy:     4  (proxy saw the request)
+  Unmatched (bypassed): 1  <- requests that bypassed the proxy
+
+Unmatched StopFailure events:
+  2026-04-04T14:22:11  session=5995cc7d  (no proxy entry within ±30s)
+
+  WARN: 1 of 5 StopFailure events have no proxy record. Check that Claude Code
+        is routing all API calls through the proxy (ANTHROPIC_BASE_URL set?).
+
+Proxy gaps (sessions with >60s silent intervals while active):
+  session=5995cc7d  gap at 14:22:11 (183s)
+```
+
+Flags:
+- `--since <duration>` — look-back window, e.g. `1h`, `4h`, `24h`, `7d` (default: `24h`)
+- `--session <id>` — restrict analysis to a specific session (prefix match)
+
+If there are no gaps or unmatched events in the window, prints a clean-bill-of-health message.
 
 ### `ht proxy stats [--since 1h | --today | --session <id>]`
 
@@ -351,7 +433,7 @@ integration/
 
 internal/cli/
   proxy.go        CLI: start, stop, status, tail, inspect, sessions, session,
-                  analyze, stats, install, update-pricing
+                  analyze, why, gaps, stats, install, update-pricing
 
 internal/state/
   proxy.go        DB methods: Insert, Query, GetRequest, ListSessions,
@@ -366,12 +448,15 @@ internal/state/
 | `ht proxy status` | Running? Uptime? Request count? |
 | `ht proxy tail -n 10` | Last 10 requests: tokens, cache, cost, latency |
 | `ht proxy tail -v -n 5` | Verbose one-line detail per request |
-| `ht proxy inspect <id>` | Full deep dive: headers, paths, all fields |
+| `ht proxy inspect <id>` | Full deep dive: headers, paths, token breakdown |
+| `ht proxy why <id>` | One-paragraph explanation of the dominant cost driver |
 | `ht proxy sessions` | Sessions with request counts and costs |
 | `ht proxy session <id>` | Full transaction list for a session |
 | `ht proxy analyze <id>` | Content breakdown: system, tools, messages |
 | `ht proxy analyze <id> --json` | Structured JSON for agent consumption |
 | `ht proxy stats --today` | Today's aggregate: cost, cache hit rate |
 | `ht proxy stats --session <id>` | Per-session aggregate |
+| `ht proxy gaps` | Detect bypassed requests and silent session intervals |
+| `ht proxy gaps --session <id>` | Restrict gap analysis to one session |
 | `curl localhost:9800/health` | Quick health check for scripts |
 | `journalctl --user -u hitch-proxy -f` | Service logs (startup + bug warnings) |
