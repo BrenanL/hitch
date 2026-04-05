@@ -1,0 +1,5 @@
+{
+  "name": "minimal",
+  "description": "Stripped down — no hooks, minimal settings",
+  "tags": ["builtin"]
+}

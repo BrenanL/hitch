@@ -1,0 +1,24 @@
+{
+  "name": "conservative",
+  "description": "Max safety — deny dangerous commands, strict permissions",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium"
+  },
+  "settings": {
+    "effortLevel": "medium"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ht hook exec --deny-dangerous"
+          }
+        ]
+      }
+    ]
+  },
+  "tags": ["builtin", "safety"]
+}
