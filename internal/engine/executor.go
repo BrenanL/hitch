@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/BrenanL/hitch/internal/adapters"
@@ -80,8 +81,10 @@ func (e *Executor) Execute(ctx context.Context, rule *state.Rule, input *hookio.
 		Input:      input,
 	}
 
+	var allActionResults []*ActionResult
 	for _, action := range parsed.Actions {
 		actionResult := ExecuteAction(ctx, action, actx)
+		allActionResults = append(allActionResults, actionResult)
 		if actionResult.ActionTaken != "" {
 			result.ActionsTaken = append(result.ActionsTaken, actionResult.ActionTaken)
 		}
@@ -97,6 +100,17 @@ func (e *Executor) Execute(ctx context.Context, rule *state.Rule, input *hookio.
 	// Default output if not blocked
 	if result.Output == nil {
 		result.Output = hookio.Allow()
+	}
+
+	// Collect additionalContext from all inject_context actions and merge
+	var contexts []string
+	for _, ar := range allActionResults {
+		if ar.Output != nil && ar.Output.AdditionalContext != "" {
+			contexts = append(contexts, ar.Output.AdditionalContext)
+		}
+	}
+	if len(contexts) > 0 {
+		result.Output.AdditionalContext = strings.Join(contexts, "\n")
 	}
 
 	result.DurationMs = int(time.Since(start).Milliseconds())

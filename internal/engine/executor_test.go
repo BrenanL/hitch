@@ -404,3 +404,66 @@ func TestExecutorDenyWithReason(t *testing.T) {
 		t.Errorf("reason = %q, want %q", result.Output.Reason, "custom reason")
 	}
 }
+
+func TestExecutorInjectContextSetsAdditionalContext(t *testing.T) {
+	db, err := state.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	executor := &Executor{DB: db}
+
+	rule := &state.Rule{
+		ID:  "inject1",
+		DSL: `on stop -> inject_context "context text"`,
+	}
+
+	input := &hookio.HookInput{
+		SessionID:     "s1",
+		HookEventName: "Stop",
+	}
+
+	result := executor.Execute(context.Background(), rule, input)
+	if result.Error != nil {
+		t.Fatalf("Execute: %v", result.Error)
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.AdditionalContext != "context text" {
+		t.Errorf("AdditionalContext = %q, want %q", result.Output.AdditionalContext, "context text")
+	}
+}
+
+func TestExecutorInjectContextChaining(t *testing.T) {
+	db, err := state.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	executor := &Executor{DB: db}
+
+	rule := &state.Rule{
+		ID:  "inject2",
+		DSL: `on stop -> inject_context "first" -> inject_context "second"`,
+	}
+
+	input := &hookio.HookInput{
+		SessionID:     "s1",
+		HookEventName: "Stop",
+	}
+
+	result := executor.Execute(context.Background(), rule, input)
+	if result.Error != nil {
+		t.Fatalf("Execute: %v", result.Error)
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	want := "first\nsecond"
+	if result.Output.AdditionalContext != want {
+		t.Errorf("AdditionalContext = %q, want %q", result.Output.AdditionalContext, want)
+	}
+}

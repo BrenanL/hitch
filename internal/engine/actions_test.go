@@ -198,3 +198,55 @@ func TestExecuteLogActionWithDB(t *testing.T) {
 		t.Error("log action should write an event to the database")
 	}
 }
+
+func TestExecuteInjectContextAction(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "InstructionsLoaded",
+		Input:     &hookio.HookInput{},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.InjectContextAction{Text: "hello world"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "inject-context" {
+		t.Errorf("action = %q, want inject-context", result.ActionTaken)
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.AdditionalContext != "hello world" {
+		t.Errorf("AdditionalContext = %q, want %q", result.Output.AdditionalContext, "hello world")
+	}
+}
+
+func TestExecuteSwitchProfileAction(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "SubagentStart",
+		Input:     &hookio.HookInput{},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.SwitchProfileAction{Profile: "conservative"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "switch-profile:conservative" {
+		t.Errorf("action = %q, want switch-profile:conservative", result.ActionTaken)
+	}
+}
+
+func TestExecutePruneActionNoPruner(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent:  "PreCompact",
+		Input:      &hookio.HookInput{},
+		PrunerFunc: nil,
+	}
+
+	result := ExecuteAction(context.Background(), dsl.PruneAction{Tier: "gentle"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "prune-noop" {
+		t.Errorf("action = %q, want prune-noop", result.ActionTaken)
+	}
+}
