@@ -24,6 +24,14 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out -o coverage.html
 ```
 
+## Testing Standards
+
+- Tests must verify **behavior**, not just that code exists. A test that calls a function and checks `err == nil` without asserting on the return value is not a valid test.
+- Assertions for quantities must use exact expected values from specs, not approximations.
+- Edge cases from acceptance criteria must each have their own test case.
+- Use `t.Fatalf` for setup failures (the test cannot continue), `t.Errorf` for assertion failures (the test can keep running).
+- No testify — standard `testing` package only.
+
 ## Test Architecture
 
 ### Unit Tests (per-package)
@@ -159,3 +167,21 @@ func TestNewAdapter(t *testing.T) {
     // assert on gotRequest
 }
 ```
+
+## Shared Utility Packages
+
+Several packages exist specifically to avoid duplicated math across the codebase. Always import these rather than reimplementing their logic inline.
+
+| Package | Purpose |
+|---|---|
+| `internal/pricing/` | Cost estimation by model. Canonical implementation. All consumers import this — never duplicate cost math. |
+| `internal/tokens/` | Token estimation (`chars / 4` heuristic). All consumers import this — never embed the arithmetic inline. |
+| `internal/metrics/` | Burn rate, token velocity. Canonical definitions. All consumers call the same function. |
+
+**Rule:** If two components need the same calculation, extract it. If it exists in a shared package, import it — never reimplement.
+
+## Package-Specific Test Docs
+
+Some packages have their own detailed test documentation (e.g., `internal/proxy/TESTING.md`).
+
+When a package has a `TESTING.md`, read it before writing tests for that package.
