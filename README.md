@@ -27,16 +27,20 @@ Hitch sits between you and your AI agent (Claude Code today, others later). It l
 
 ```bash
 # Install
-go install github.com/org/hitch@latest
+go install github.com/BrenanL/hitch/cmd/ht@latest
+
+# Or build from source
+git clone https://github.com/BrenanL/hitch.git
+cd hitch && go build -o ht ./cmd/ht
 
 # Initialize globally
 ht init --global
 
 # Add a notification channel
-ht channel add ntfy my-alerts
+./ht channel add ntfy my-alerts
 
 # Add your first rule
-ht rule add 'on stop -> notify ntfy if elapsed > 30s'
+./ht rule add 'on stop -> notify ntfy if elapsed > 30s'
 
 # Done. Next time Claude Code finishes a long task, you'll get a push notification.
 ```
@@ -70,6 +74,20 @@ ht rule add 'on stop -> require tests-pass'
 
 Hitch is a single Go binary. No runtime dependencies. Install it once, use it everywhere.
 
+## API Logging Proxy
+
+Hitch includes a transparent HTTP proxy that sits between Claude Code and the Anthropic API, logging every request and response with full token counts, cost tracking, latency, and automatic bug detection.
+
+```bash
+ht proxy start           # Start the proxy
+ht proxy sessions        # List sessions with costs
+ht proxy session <id>    # Full transaction list for a session
+ht proxy analyze <id>    # Content breakdown: system, tools, messages
+ht proxy stats --today   # Today's aggregate stats
+```
+
+See `internal/proxy/README.md` for full proxy documentation.
+
 ## Notification channels
 
 | Channel | Setup complexity | What you need |
@@ -82,24 +100,6 @@ Hitch is a single Go binary. No runtime dependencies. Install it once, use it ev
 | Pushover | Low | App token + user key |
 | Email | Medium | SMTP or SendGrid credentials |
 | Twilio SMS | Medium | Account SID + auth token |
-
-## Custom hooks
-
-Write a script, drop it in `.hitch/hooks/`, and hitch can use it:
-
-```bash
-# .hitch/hooks/my-custom-check.sh
-#!/bin/bash
-INPUT=$(cat)
-# your logic here
-echo '{"decision": "block", "reason": "Custom check failed"}'
-```
-
-```
-ht rule add 'on stop -> run hook:my-custom-check'
-```
-
-An AI agent can create these for you — just say "set up hitch to do X" and it writes the script and registers the rule.
 
 ## Hook packages
 
@@ -117,12 +117,9 @@ ht package enable safety
 
 ## Documentation
 
-- [Philosophy & Vision](docs/philosophy.md) — Why hitch exists, where it's going
-- [Architecture](docs/architecture.md) — Technical design, DSL spec, adapter interface
-- [Decisions](docs/decisions.md) — Finalized technical choices and rationale
-- [Build Plan](docs/build-plan.md) — Implementation phases and sequencing
-- [Hook Ideas](docs/ideas.md) — 46 creative hook ideas organized by category
+- [Agent & Development Guide](docs/agent-guide.md) — Conventions, test patterns, build commands
 - [Claude Code Hooks Overview](docs/hooks-overview.md) — Quick reference for the hooks API
+- [Design Review](docs/analysis/design-review.md) — Post-MVP review: what works, what's missing
 
 ## License
 

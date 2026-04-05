@@ -35,6 +35,7 @@ func init() {
 		newExportCmd(),
 		newImportCmd(),
 		newDenyListCmd(),
+		newProxyCmd(),
 	)
 }
 
