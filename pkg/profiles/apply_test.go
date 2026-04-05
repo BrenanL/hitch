@@ -346,6 +346,103 @@ func TestCurrentProfileClearedAfterReset(t *testing.T) {
 	}
 }
 
+// TestApplyProfileEnvDeleteTrackedKey verifies that EnvDeletes entries appear in the tracked
+// keys list as "env_delete:KEY".
+func TestApplyProfileEnvDeleteTrackedKey(t *testing.T) {
+	dir := t.TempDir()
+
+	p := &Profile{
+		Name:        "env-delete-tracking-test",
+		Description: "test",
+		EnvDeletes:  []string{"KEY_TO_TRACK"},
+	}
+
+	written, err := ApplyProfile(p, dir)
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+
+	found := false
+	for _, k := range written {
+		if k == "env_delete:KEY_TO_TRACK" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("tracked keys missing env_delete:KEY_TO_TRACK, got %v", written)
+	}
+}
+
+// TestApplyProfileSettingsDeleteTrackedKey verifies that nil Settings values appear in the
+// tracked keys list as "settings_delete:KEY".
+func TestApplyProfileSettingsDeleteTrackedKey(t *testing.T) {
+	dir := t.TempDir()
+
+	p := &Profile{
+		Name:        "settings-delete-tracking-test",
+		Description: "test",
+		Settings: map[string]any{
+			"keyToDelete": nil,
+		},
+	}
+
+	written, err := ApplyProfile(p, dir)
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+
+	found := false
+	for _, k := range written {
+		if k == "settings_delete:keyToDelete" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("tracked keys missing settings_delete:keyToDelete, got %v", written)
+	}
+}
+
+// TestResetProfileEmptyTrackedKeys verifies ResetProfile is a no-op when called with an empty list.
+func TestResetProfileEmptyTrackedKeys(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := ResetProfile([]string{}, dir); err != nil {
+		t.Errorf("ResetProfile with empty keys: unexpected error: %v", err)
+	}
+	if err := ResetProfile(nil, dir); err != nil {
+		t.Errorf("ResetProfile with nil keys: unexpected error: %v", err)
+	}
+}
+
+// TestApplyProfileHooksOnlyWritesActiveRecord verifies ApplyProfile with only Hooks (no env/settings)
+// still writes the active-profile record.
+func TestApplyProfileHooksOnlyWritesActiveRecord(t *testing.T) {
+	dir := t.TempDir()
+
+	p := &Profile{
+		Name:        "hooks-only-profile",
+		Description: "test",
+		Hooks: map[string]any{
+			"PreToolUse": []any{"some-hook"},
+		},
+	}
+
+	written, err := ApplyProfile(p, dir)
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+
+	name, err := CurrentProfile(dir)
+	if err != nil {
+		t.Fatalf("CurrentProfile: %v", err)
+	}
+	if name != "hooks-only-profile" {
+		t.Errorf("CurrentProfile = %q, want hooks-only-profile", name)
+	}
+	// written may be empty since no env/settings were set — that's valid
+	_ = written
+}
+
 // TestApplyProfileSettingsLocalPathCreatedAutomatically verifies ApplyProfile creates
 // the .claude directory if it does not already exist.
 func TestApplyProfileSettingsLocalPathCreatedAutomatically(t *testing.T) {

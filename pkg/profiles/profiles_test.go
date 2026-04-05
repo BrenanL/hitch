@@ -7,6 +7,191 @@ import (
 	"testing"
 )
 
+// TestBuiltinDefaultProfileFields verifies the "default" built-in has expected exact field values.
+func TestBuiltinDefaultProfileFields(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	p, err := Load("default")
+	if err != nil {
+		t.Fatalf("Load('default'): %v", err)
+	}
+	if p.Env["CLAUDE_CODE_EFFORT_LEVEL"] != "medium" {
+		t.Errorf("default CLAUDE_CODE_EFFORT_LEVEL = %q, want medium", p.Env["CLAUDE_CODE_EFFORT_LEVEL"])
+	}
+	effortRaw, ok := p.Settings["effortLevel"]
+	if !ok {
+		t.Fatal("default settings.effortLevel not set")
+	}
+	if effortRaw != "medium" {
+		t.Errorf("default settings.effortLevel = %v, want medium", effortRaw)
+	}
+}
+
+// TestBuiltinResearchProfileFields verifies the "research" built-in has MAX_THINKING_TOKENS=16000
+// and the expected settings keys.
+func TestBuiltinResearchProfileFields(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	p, err := Load("research")
+	if err != nil {
+		t.Fatalf("Load('research'): %v", err)
+	}
+	if p.Env["MAX_THINKING_TOKENS"] != "16000" {
+		t.Errorf("research MAX_THINKING_TOKENS = %q, want 16000", p.Env["MAX_THINKING_TOKENS"])
+	}
+	if p.Env["CLAUDE_CODE_EFFORT_LEVEL"] != "high" {
+		t.Errorf("research CLAUDE_CODE_EFFORT_LEVEL = %q, want high", p.Env["CLAUDE_CODE_EFFORT_LEVEL"])
+	}
+	if v, ok := p.Settings["alwaysThinkingEnabled"]; !ok || v != true {
+		t.Errorf("research settings.alwaysThinkingEnabled = %v (ok=%v), want true", v, ok)
+	}
+	if v, ok := p.Settings["showThinkingSummaries"]; !ok || v != true {
+		t.Errorf("research settings.showThinkingSummaries = %v (ok=%v), want true", v, ok)
+	}
+}
+
+// TestBuiltinConservativeProfileHasHooks verifies the "conservative" built-in declares a hooks block.
+func TestBuiltinConservativeProfileHasHooks(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	p, err := Load("conservative")
+	if err != nil {
+		t.Fatalf("Load('conservative'): %v", err)
+	}
+	if len(p.Hooks) == 0 {
+		t.Error("conservative profile: expected hooks, got empty map")
+	}
+}
+
+// TestBuiltinMinimalProfileHasNoEnvOrSettings verifies the "minimal" built-in has no env or settings.
+func TestBuiltinMinimalProfileHasNoEnvOrSettings(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	p, err := Load("minimal")
+	if err != nil {
+		t.Fatalf("Load('minimal'): %v", err)
+	}
+	if len(p.Env) != 0 {
+		t.Errorf("minimal profile: expected no env, got %v", p.Env)
+	}
+	if len(p.Settings) != 0 {
+		t.Errorf("minimal profile: expected no settings, got %v", p.Settings)
+	}
+}
+
+// TestBuiltinTagsPresent verifies all 5 built-in profiles include the "builtin" tag.
+func TestBuiltinTagsPresent(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	profiles, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	for _, p := range profiles {
+		hasBuiltin := false
+		for _, tag := range p.Tags {
+			if tag == "builtin" {
+				hasBuiltin = true
+				break
+			}
+		}
+		if !hasBuiltin {
+			t.Errorf("profile %q missing 'builtin' tag, tags=%v", p.Name, p.Tags)
+		}
+	}
+}
+
+// TestLoadAllUserOnlyProfileAppears verifies a user profile whose name doesn't match any built-in
+// still appears in LoadAll results.
+func TestLoadAllUserOnlyProfileAppears(t *testing.T) {
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", os.Getenv("HOME"))
+
+	profilesDir := filepath.Join(tmp, ".hitch", "profiles")
+	if err := os.MkdirAll(profilesDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	userProfile := Profile{
+		Name:        "custom-user-profile",
+		Description: "A user-defined profile",
+		Tags:        []string{"custom"},
+	}
+	data, err := json.Marshal(userProfile)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(profilesDir, "custom-user-profile.json"), data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	profiles, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+
+	found := false
+	for _, p := range profiles {
+		if p.Name == "custom-user-profile" {
+			found = true
+			if p.Description != "A user-defined profile" {
+				t.Errorf("description = %q, want 'A user-defined profile'", p.Description)
+			}
+		}
+	}
+	if !found {
+		t.Error("user-only profile 'custom-user-profile' not found in LoadAll results")
+	}
+	// Total should be 5 built-ins + 1 user-only
+	if len(profiles) != 6 {
+		t.Errorf("len(profiles) = %d, want 6 (5 builtins + 1 user-only)", len(profiles))
+	}
+}
+
+// TestValidateEmptyEnvKey verifies Validate rejects a profile with an empty env key.
+func TestValidateEmptyEnvKey(t *testing.T) {
+	p := &Profile{
+		Name:        "bad-env-key",
+		Description: "has empty env key",
+		Env: map[string]string{
+			"": "some-value",
+		},
+	}
+	if err := Validate(p); err == nil {
+		t.Error("Validate with empty env key: expected error, got nil")
+	}
+}
+
+// TestValidateEmptyEnvValue verifies Validate rejects a profile with an empty env value.
+func TestValidateEmptyEnvValue(t *testing.T) {
+	p := &Profile{
+		Name:        "bad-env-value",
+		Description: "has empty env value",
+		Env: map[string]string{
+			"SOME_KEY": "",
+		},
+	}
+	if err := Validate(p); err == nil {
+		t.Error("Validate with empty env value: expected error, got nil")
+	}
+}
+
 // TestLoadAllBuiltins verifies all 5 built-in profiles are loaded.
 func TestLoadAllBuiltins(t *testing.T) {
 	// Override user dir to a temp dir with no user profiles.
