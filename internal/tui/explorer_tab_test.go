@@ -197,3 +197,83 @@ func TestExplorerTabIntegratedInModel(t *testing.T) {
 		t.Errorf("tabs[4].Title() = %q, want Explorer", m.tabs[4].Title())
 	}
 }
+
+func TestExplorerTabScrollBoundaryWithContent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	dir := t.TempDir()
+	// Populate key dirs so there are enough lines to scroll.
+	for _, d := range []string{"internal", "pkg", "cmd", "docs"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, d, "file.go"), []byte("package x"), 0o644); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+	}
+
+	tab := NewExplorerTab(dir)
+	nLines := len(tab.lines)
+	if nLines == 0 {
+		t.Fatal("expected non-empty lines")
+	}
+
+	// j should increment scroll from 0 to 1.
+	if tab.scroll != 0 {
+		t.Fatalf("initial scroll = %d, want 0", tab.scroll)
+	}
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	tab = updated.(*ExplorerTab)
+	if tab.scroll != 1 {
+		t.Errorf("scroll after j = %d, want 1", tab.scroll)
+	}
+
+	// G jumps to last line.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	tab = updated.(*ExplorerTab)
+	if tab.scroll != nLines-1 {
+		t.Errorf("scroll after G = %d, want %d", tab.scroll, nLines-1)
+	}
+
+	// j at end should not exceed last line.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	tab = updated.(*ExplorerTab)
+	if tab.scroll != nLines-1 {
+		t.Errorf("scroll after j at end = %d, want %d", tab.scroll, nLines-1)
+	}
+}
+
+func TestFormatSizeLargeMB(t *testing.T) {
+	// 10 MB
+	got := formatSize(10 * 1024 * 1024)
+	if got != "10 MB" {
+		t.Errorf("formatSize(10MB) = %q, want %q", got, "10 MB")
+	}
+}
+
+func TestShortenPathExactHome(t *testing.T) {
+	// Path exactly equal to home should return "~" (already covered by TestShortenPath).
+	home := "/home/alice"
+	got := shortenPath("/home/alice", home)
+	if got != "~" {
+		t.Errorf("shortenPath exact home = %q, want '~'", got)
+	}
+}
+
+func TestBuildDirTreeEmpty(t *testing.T) {
+	// Empty directory produces empty result without error.
+	dir := t.TempDir()
+	lines := buildDirTree(dir, dir, 1, 2)
+	if len(lines) != 0 {
+		t.Errorf("buildDirTree empty dir: got %d lines, want 0", len(lines))
+	}
+}
+
+func TestBuildDirTreeMissingDir(t *testing.T) {
+	// Non-existent dir produces nil without panic.
+	lines := buildDirTree("/no/such/path/xyz123", "/home", 1, 2)
+	if lines != nil {
+		t.Errorf("buildDirTree missing dir: got %v, want nil", lines)
+	}
+}

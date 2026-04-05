@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -146,5 +147,80 @@ func TestWindowResizeUpdatesDimensions(t *testing.T) {
 	}
 	if m.height != 40 {
 		t.Errorf("height = %d, want 40", m.height)
+	}
+}
+
+func TestModelHasExactlyFiveTabs(t *testing.T) {
+	m := New()
+	if len(m.tabs) != 5 {
+		t.Errorf("len(tabs) = %d, want 5", len(m.tabs))
+	}
+}
+
+func TestModelTabTitlesInOrder(t *testing.T) {
+	m := New()
+	want := []string{"Settings", "Env Vars", "Hooks", "Memory", "Explorer"}
+	for i, title := range want {
+		if m.tabs[i].Title() != title {
+			t.Errorf("tabs[%d].Title() = %q, want %q", i, m.tabs[i].Title(), title)
+		}
+	}
+}
+
+func TestModelViewRendersTabBar(t *testing.T) {
+	m := New()
+	view := m.View()
+	// Tab bar must show all 5 tab titles.
+	for _, title := range []string{"Settings", "Env Vars", "Hooks", "Memory", "Explorer"} {
+		if !strings.Contains(view, title) {
+			t.Errorf("View() missing tab title %q", title)
+		}
+	}
+}
+
+func TestModelViewRendersStatusBar(t *testing.T) {
+	m := New()
+	view := m.View()
+	// Status bar should mention key bindings.
+	if !strings.Contains(view, "Tab") {
+		t.Errorf("View() status bar missing 'Tab' hint")
+	}
+	if !strings.Contains(view, "quit") {
+		t.Errorf("View() status bar missing 'quit' hint")
+	}
+}
+
+func TestModelHelpOverlayContent(t *testing.T) {
+	m := New()
+	// Help should not be visible initially.
+	view := m.View()
+	if strings.Contains(view, "Key Bindings") {
+		t.Error("help overlay visible before pressing ?")
+	}
+
+	// Press ? to show help.
+	m = sendKey(m, "?")
+	view = m.View()
+	if !strings.Contains(view, "Key Bindings") {
+		t.Error("help overlay missing 'Key Bindings' after pressing ?")
+	}
+	if !strings.Contains(view, "Ctrl+C") {
+		t.Error("help overlay missing 'Ctrl+C' binding")
+	}
+}
+
+func TestModelUnknownKeyForwardedToActiveTab(t *testing.T) {
+	m := New()
+	// Active tab is 0 (SettingsTab). Send "j" which is handled by SettingsTab.
+	// The model should forward it and the SettingsTab cursor should advance.
+	st := m.tabs[0].(SettingsTab)
+	st.cursor = 0
+	m.tabs[0] = st
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated.(Model)
+	newST := m.tabs[0].(SettingsTab)
+	if newST.cursor != 1 {
+		t.Errorf("after j forwarded to SettingsTab: cursor = %d, want 1", newST.cursor)
 	}
 }

@@ -428,3 +428,106 @@ func TestSettingsTabFilterBackspace(t *testing.T) {
 func TestSettingsTabImplementsTabModel(t *testing.T) {
 	var _ tabModel = SettingsTab{}
 }
+
+// TestPrettyValueString verifies string values are quoted.
+func TestPrettyValueString(t *testing.T) {
+	got := prettyValue([]byte(`"high"`))
+	if got != `"high"` {
+		t.Errorf("prettyValue string = %q, want %q", got, `"high"`)
+	}
+}
+
+// TestPrettyValueInteger verifies integer JSON values are formatted without decimals.
+func TestPrettyValueInteger(t *testing.T) {
+	got := prettyValue([]byte(`42`))
+	if got != "42" {
+		t.Errorf("prettyValue int = %q, want %q", got, "42")
+	}
+}
+
+// TestPrettyValueFloat verifies non-integer numbers are formatted with %g.
+func TestPrettyValueFloat(t *testing.T) {
+	got := prettyValue([]byte(`3.14`))
+	if got != "3.14" {
+		t.Errorf("prettyValue float = %q, want %q", got, "3.14")
+	}
+}
+
+// TestPrettyValueBoolTrue verifies true is formatted as "true".
+func TestPrettyValueBoolTrue(t *testing.T) {
+	got := prettyValue([]byte(`true`))
+	if got != "true" {
+		t.Errorf("prettyValue true = %q, want %q", got, "true")
+	}
+}
+
+// TestPrettyValueBoolFalse verifies false is formatted as "false".
+func TestPrettyValueBoolFalse(t *testing.T) {
+	got := prettyValue([]byte(`false`))
+	if got != "false" {
+		t.Errorf("prettyValue false = %q, want %q", got, "false")
+	}
+}
+
+// TestPrettyValueArray verifies arrays show item count.
+func TestPrettyValueArray(t *testing.T) {
+	got := prettyValue([]byte(`["a","b","c"]`))
+	if got != "[3 items]" {
+		t.Errorf("prettyValue array = %q, want %q", got, "[3 items]")
+	}
+}
+
+// TestPrettyValueEmptyArray verifies empty arrays show "[0 items]".
+func TestPrettyValueEmptyArray(t *testing.T) {
+	got := prettyValue([]byte(`[]`))
+	if got != "[0 items]" {
+		t.Errorf("prettyValue empty array = %q, want %q", got, "[0 items]")
+	}
+}
+
+// TestPrettyValueObject verifies objects show key count.
+func TestPrettyValueObject(t *testing.T) {
+	got := prettyValue([]byte(`{"a":1,"b":2}`))
+	if got != "{2 keys}" {
+		t.Errorf("prettyValue object = %q, want %q", got, "{2 keys}")
+	}
+}
+
+// TestPrettyValueEmptyObject verifies empty objects show "{}".
+func TestPrettyValueEmptyObject(t *testing.T) {
+	got := prettyValue([]byte(`{}`))
+	if got != "{}" {
+		t.Errorf("prettyValue empty object = %q, want %q", got, "{}")
+	}
+}
+
+// TestPrettyValueEmpty verifies nil/empty input returns empty string.
+func TestPrettyValueEmpty(t *testing.T) {
+	got := prettyValue(nil)
+	if got != "" {
+		t.Errorf("prettyValue nil = %q, want %q", got, "")
+	}
+	got = prettyValue([]byte{})
+	if got != "" {
+		t.Errorf("prettyValue empty slice = %q, want %q", got, "")
+	}
+}
+
+// TestScopeBadge verifies scopeBadge returns correct letters.
+func TestScopeBadge(t *testing.T) {
+	tests := []struct {
+		scope settings.Scope
+		want  string
+	}{
+		{settings.ScopeUser, "U"},
+		{settings.ScopeProject, "P"},
+		{settings.ScopeLocal, "L"},
+		{settings.ScopeManaged, "M"},
+	}
+	for _, tc := range tests {
+		got := scopeBadge(tc.scope)
+		if got != tc.want {
+			t.Errorf("scopeBadge(%v) = %q, want %q", tc.scope, got, tc.want)
+		}
+	}
+}

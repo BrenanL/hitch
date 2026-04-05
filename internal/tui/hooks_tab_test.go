@@ -155,7 +155,10 @@ func TestSortedKeys(t *testing.T) {
 }
 
 func TestItoa(t *testing.T) {
-	tests := []struct{ n int; want string }{
+	tests := []struct {
+		n    int
+		want string
+	}{
 		{0, "0"},
 		{1, "1"},
 		{42, "42"},
@@ -167,5 +170,128 @@ func TestItoa(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("itoa(%d) = %q, want %q", tc.n, got, tc.want)
 		}
+	}
+}
+
+func TestStripAnsi(t *testing.T) {
+	// Plain string passes through unchanged.
+	plain := "hello world"
+	if got := stripAnsi(plain); got != plain {
+		t.Errorf("stripAnsi(%q) = %q, want %q", plain, got, plain)
+	}
+
+	// String with ANSI codes should have codes removed.
+	withAnsi := "\x1b[32mgreen text\x1b[0m"
+	want := "green text"
+	if got := stripAnsi(withAnsi); got != want {
+		t.Errorf("stripAnsi(%q) = %q, want %q", withAnsi, got, want)
+	}
+
+	// Empty string.
+	if got := stripAnsi(""); got != "" {
+		t.Errorf("stripAnsi('') = %q, want ''", got)
+	}
+}
+
+func TestHooksTabSingleHandlerLabel(t *testing.T) {
+	dir := t.TempDir()
+	projectSettings := filepath.Join(dir, ".claude", "settings.json")
+	writeSettingsJSON(t, projectSettings, map[string]any{
+		"PreToolUse": []map[string]any{
+			{
+				"matcher": "Bash",
+				"hooks": []map[string]any{
+					{"type": "command", "command": "/usr/bin/check.sh"},
+				},
+			},
+		},
+	})
+
+	tab := NewHooksTab(dir)
+	view := tab.View()
+
+	// One handler: should display "[1 handler]" (singular).
+	if !strings.Contains(view, "[1 handler]") {
+		t.Errorf("view should contain '[1 handler]', got:\n%s", view)
+	}
+}
+
+func TestHooksTabMultipleHandlersLabel(t *testing.T) {
+	dir := t.TempDir()
+	projectSettings := filepath.Join(dir, ".claude", "settings.json")
+	writeSettingsJSON(t, projectSettings, map[string]any{
+		"PostToolUse": []map[string]any{
+			{
+				"matcher": "",
+				"hooks": []map[string]any{
+					{"type": "command", "command": "/usr/bin/log1.sh"},
+					{"type": "command", "command": "/usr/bin/log2.sh"},
+				},
+			},
+		},
+	})
+
+	tab := NewHooksTab(dir)
+	view := tab.View()
+
+	// Two handlers: should display "[2 handlers]" (plural).
+	if !strings.Contains(view, "[2 handlers]") {
+		t.Errorf("view should contain '[2 handlers]', got:\n%s", view)
+	}
+}
+
+func TestHooksTabFilterByCommand(t *testing.T) {
+	dir := t.TempDir()
+	projectSettings := filepath.Join(dir, ".claude", "settings.json")
+	writeSettingsJSON(t, projectSettings, map[string]any{
+		"PreToolUse": []map[string]any{
+			{
+				"matcher": "Bash",
+				"hooks": []map[string]any{
+					{"type": "command", "command": "/usr/bin/security-guard.sh"},
+				},
+			},
+		},
+		"Stop": []map[string]any{
+			{
+				"matcher": "",
+				"hooks": []map[string]any{
+					{"type": "command", "command": "/usr/bin/notify.sh"},
+				},
+			},
+		},
+	})
+
+	tab := NewHooksTab(dir)
+	tab.filter = "security"
+	tab.applyFilter()
+
+	view := tab.View()
+	if !strings.Contains(view, "security-guard.sh") {
+		t.Errorf("filtered view should contain security-guard.sh, got:\n%s", view)
+	}
+	if strings.Contains(view, "notify.sh") {
+		t.Errorf("filtered view should not contain notify.sh, got:\n%s", view)
+	}
+}
+
+func TestHooksTabScrollBoundary(t *testing.T) {
+	dir := t.TempDir()
+	tab := NewHooksTab(dir)
+
+	// k at top should not go below 0.
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	tab = updated.(*HooksTab)
+	if tab.cursor < 0 {
+		t.Errorf("cursor went below 0: %d", tab.cursor)
+	}
+
+	// j past end should stop at last element.
+	for i := 0; i < len(tab.filtered)+10; i++ {
+		updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		tab = updated.(*HooksTab)
+	}
+	if len(tab.filtered) > 0 && tab.cursor >= len(tab.filtered) {
+		t.Errorf("cursor exceeded filtered length: got %d, len=%d", tab.cursor, len(tab.filtered))
 	}
 }

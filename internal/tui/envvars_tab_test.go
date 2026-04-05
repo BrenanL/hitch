@@ -224,3 +224,86 @@ func TestEnvVarsTabIntegratedInModel(t *testing.T) {
 		t.Errorf("tabs[1].Title() = %q, want %q", m.tabs[1].Title(), "Env Vars")
 	}
 }
+
+func TestIsSensitive(t *testing.T) {
+	sensitive := []string{
+		"ANTHROPIC_API_KEY",
+		"CLAUDE_TOKEN",
+		"MY_SECRET",
+		"DB_PASSWORD",
+		"github_token",
+	}
+	for _, name := range sensitive {
+		if !isSensitive(name) {
+			t.Errorf("isSensitive(%q) = false, want true", name)
+		}
+	}
+
+	notSensitive := []string{
+		"ANTHROPIC_MODEL",
+		"CLAUDE_DEBUG",
+		"HOME",
+		"MAX_REQUESTS",
+	}
+	for _, name := range notSensitive {
+		if isSensitive(name) {
+			t.Errorf("isSensitive(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestEnvVarsTabSensitiveMasked(t *testing.T) {
+	// Set a sensitive env var so it appears as set.
+	t.Setenv("ANTHROPIC_API_KEY", "sk-real-secret-value")
+
+	tab := NewEnvVarsTab()
+	view := tab.View()
+
+	// Real value must not appear in the view.
+	if strings.Contains(view, "sk-real-secret-value") {
+		t.Error("sensitive value leaked into View()")
+	}
+	// Masked value should appear.
+	if !strings.Contains(view, "●●●●●●●●") {
+		t.Error("masked placeholder not found in View() for sensitive var")
+	}
+}
+
+func TestEnvVarsTabFilterBackspace(t *testing.T) {
+	tab := NewEnvVarsTab()
+
+	// Enter filter mode and type "ABC".
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	tab = updated.(*EnvVarsTab)
+	for _, ch := range "ABC" {
+		updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		tab = updated.(*EnvVarsTab)
+	}
+	if tab.filter != "ABC" {
+		t.Fatalf("filter before backspace = %q, want ABC", tab.filter)
+	}
+
+	// Backspace removes last character.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	tab = updated.(*EnvVarsTab)
+	if tab.filter != "AB" {
+		t.Errorf("filter after backspace = %q, want AB", tab.filter)
+	}
+}
+
+func TestEnvVarsTabFilterEnterExitsFilterMode(t *testing.T) {
+	tab := NewEnvVarsTab()
+
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	tab = updated.(*EnvVarsTab)
+	if !tab.filtering {
+		t.Fatal("expected filtering=true after /")
+	}
+
+	// Enter commits and exits filter mode while keeping the filter string.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tab = updated.(*EnvVarsTab)
+	if tab.filtering {
+		t.Error("expected filtering=false after Enter")
+	}
+}

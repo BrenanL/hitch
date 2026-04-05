@@ -134,3 +134,81 @@ func TestMemoryTabIntegratedInModel(t *testing.T) {
 		t.Errorf("tabs[3].Title() = %q, want Memory", m.tabs[3].Title())
 	}
 }
+
+func TestMemoryTabScrollIncrement(t *testing.T) {
+	// Create a tab with real content so there are multiple lines to scroll through.
+	fakeHome := t.TempDir()
+	dir := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	encodedCWD := urlEncodePath(dir)
+	memDir := filepath.Join(fakeHome, ".claude", "projects", encodedCWD, "memory")
+	if err := os.MkdirAll(memDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Write enough lines to allow scrolling.
+	var content strings.Builder
+	for i := 0; i < 20; i++ {
+		content.WriteString("- Line entry number\n")
+	}
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write MEMORY.md: %v", err)
+	}
+
+	tab := NewMemoryTab(dir)
+	initialScroll := tab.scroll // should be 0
+
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	tab = updated.(*MemoryTab)
+	if tab.scroll != initialScroll+1 {
+		t.Errorf("scroll after j = %d, want %d", tab.scroll, initialScroll+1)
+	}
+
+	// k should decrement.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	tab = updated.(*MemoryTab)
+	if tab.scroll != initialScroll {
+		t.Errorf("scroll after k = %d, want %d", tab.scroll, initialScroll)
+	}
+}
+
+func TestMemoryTabGoToEnd(t *testing.T) {
+	fakeHome := t.TempDir()
+	dir := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	encodedCWD := urlEncodePath(dir)
+	memDir := filepath.Join(fakeHome, ".claude", "projects", encodedCWD, "memory")
+	if err := os.MkdirAll(memDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	var content strings.Builder
+	for i := 0; i < 10; i++ {
+		content.WriteString("- Entry\n")
+	}
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write MEMORY.md: %v", err)
+	}
+
+	tab := NewMemoryTab(dir)
+	nLines := len(tab.lines)
+	if nLines == 0 {
+		t.Fatal("expected non-empty lines")
+	}
+
+	// G jumps to end.
+	updated, _ := tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	tab = updated.(*MemoryTab)
+	if tab.scroll != nLines-1 {
+		t.Errorf("scroll after G = %d, want %d", tab.scroll, nLines-1)
+	}
+
+	// g jumps back to top.
+	updated, _ = tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	tab = updated.(*MemoryTab)
+	if tab.scroll != 0 {
+		t.Errorf("scroll after g = %d, want 0", tab.scroll)
+	}
+}
