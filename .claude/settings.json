@@ -1,2 +1,37 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/dev/hitch/ht hook exec 205251 # ht:rule-205251"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/dev/hitch/ht hook exec system:session-start # ht:system:session-start"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/dev/hitch/ht hook exec system:user-prompt # ht:system:user-prompt"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -38,3 +38,6 @@ Thumbs.db
 tmp/
 private/
 _gitmeta/
+
+# bv (beads viewer) local config and caches
+.bv/
