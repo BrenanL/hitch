@@ -39,6 +39,8 @@ func init() {
 		newSettingsCmd(),
 		newSessionsCmd(),
 		newAutopsyCmd(),
+		newProfileCmd(),
+		newLaunchCmd(),
 	)
 }
 
