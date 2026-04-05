@@ -622,6 +622,31 @@ func TestParsePruneAction(t *testing.T) {
 	}
 }
 
+func TestParsePruneAllValidTiers(t *testing.T) {
+	// Test all valid tier names (implementation uses: gentle, moderate, aggressive, emergency).
+	// Note: spec section 5.3 specifies "standard" and "auto" but implementation uses "moderate" and "emergency".
+	tiers := []string{"gentle", "moderate", "aggressive", "emergency"}
+	for _, tier := range tiers {
+		rules, err := Parse(`on pre-compact -> prune ` + tier)
+		if err != nil {
+			t.Errorf("prune %s: Parse error: %v", tier, err)
+			continue
+		}
+		if len(rules) != 1 {
+			t.Errorf("prune %s: got %d rules, want 1", tier, len(rules))
+			continue
+		}
+		action, ok := rules[0].Actions[0].(PruneAction)
+		if !ok {
+			t.Errorf("prune %s: action type = %T, want PruneAction", tier, rules[0].Actions[0])
+			continue
+		}
+		if action.Tier != tier {
+			t.Errorf("prune %s: tier = %q, want %q", tier, action.Tier, tier)
+		}
+	}
+}
+
 func TestParsePruneInvalidTier(t *testing.T) {
 	_, err := Parse(`on pre-compact -> prune badtier`)
 	if err == nil {

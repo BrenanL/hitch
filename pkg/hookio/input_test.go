@@ -568,6 +568,129 @@ func TestElicitationWrongEvent(t *testing.T) {
 	}
 }
 
+func TestReadInputTeammateIdle(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "TeammateIdle",
+		"teammate_name": "bob",
+		"team_name": "beta",
+		"pending_task_count": 3
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "TeammateIdle" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "TeammateIdle")
+	}
+	if hi.TeammateNameHook != "bob" {
+		t.Errorf("TeammateNameHook = %q, want %q", hi.TeammateNameHook, "bob")
+	}
+	if hi.TeamName != "beta" {
+		t.Errorf("TeamName = %q, want %q", hi.TeamName, "beta")
+	}
+	if hi.PendingTaskCount != 3 {
+		t.Errorf("PendingTaskCount = %d, want 3", hi.PendingTaskCount)
+	}
+}
+
+func TestReadInputInstructionsLoaded(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "InstructionsLoaded",
+		"file_path": "/proj/CLAUDE.md",
+		"memory_type": "project",
+		"load_reason": "session_start"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "InstructionsLoaded" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "InstructionsLoaded")
+	}
+	if hi.EventFilePath != "/proj/CLAUDE.md" {
+		t.Errorf("EventFilePath = %q, want %q", hi.EventFilePath, "/proj/CLAUDE.md")
+	}
+	if hi.MemoryType != "project" {
+		t.Errorf("MemoryType = %q, want %q", hi.MemoryType, "project")
+	}
+	if hi.LoadReason != "session_start" {
+		t.Errorf("LoadReason = %q, want %q", hi.LoadReason, "session_start")
+	}
+}
+
+func TestReadInputCwdChanged(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/new/path",
+		"hook_event_name": "CwdChanged",
+		"old_cwd": "/old/path",
+		"new_cwd": "/new/path"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "CwdChanged" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "CwdChanged")
+	}
+	if hi.OldCwd != "/old/path" {
+		t.Errorf("OldCwd = %q, want %q", hi.OldCwd, "/old/path")
+	}
+	if hi.NewCwd != "/new/path" {
+		t.Errorf("NewCwd = %q, want %q", hi.NewCwd, "/new/path")
+	}
+}
+
+func TestReadInputFileChanged(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "FileChanged",
+		"file_path": "/proj/main.go",
+		"change_type": "modified"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "FileChanged" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "FileChanged")
+	}
+	if hi.EventFilePath != "/proj/main.go" {
+		t.Errorf("EventFilePath = %q, want %q", hi.EventFilePath, "/proj/main.go")
+	}
+	if hi.ChangeType != "modified" {
+		t.Errorf("ChangeType = %q, want %q", hi.ChangeType, "modified")
+	}
+}
+
+func TestReadInputPermissionDenied(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "PermissionDenied",
+		"tool_name": "Bash",
+		"reason": "blocked by policy"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "PermissionDenied" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "PermissionDenied")
+	}
+	if hi.ToolName != "Bash" {
+		t.Errorf("ToolName = %q, want %q", hi.ToolName, "Bash")
+	}
+	if hi.PermissionDeniedReason != "blocked by policy" {
+		t.Errorf("PermissionDeniedReason = %q, want %q", hi.PermissionDeniedReason, "blocked by policy")
+	}
+}
+
 func TestNewEventConstants(t *testing.T) {
 	events := []string{
 		EventPermissionDenied,

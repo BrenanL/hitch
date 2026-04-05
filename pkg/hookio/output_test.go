@@ -179,6 +179,25 @@ func TestStopTeammate(t *testing.T) {
 	}
 }
 
+func TestStopTeammateNoDecisionField(t *testing.T) {
+	// StopTeammate should produce {"continue": false, "stopReason": "..."} — NOT {"decision": "deny"}
+	// This is the TeammateIdle/TaskCreated/TaskCompleted blocking format per spec section 7.4.
+	out := StopTeammate("task limit reached")
+	data, _ := out.JSON()
+	var m map[string]any
+	json.Unmarshal(data, &m)
+
+	if _, ok := m["decision"]; ok {
+		t.Error("StopTeammate should not include decision field — use continue:false instead")
+	}
+	if m["continue"] != false {
+		t.Errorf("continue = %v, want false", m["continue"])
+	}
+	if m["stopReason"] != "task limit reached" {
+		t.Errorf("stopReason = %v, want %q", m["stopReason"], "task limit reached")
+	}
+}
+
 func TestWorktreePassthrough(t *testing.T) {
 	out := WorktreePassthrough("/proj/.claude/worktrees/feature")
 	data, _ := out.JSON()

@@ -102,6 +102,11 @@ func (e *Executor) Execute(ctx context.Context, rule *state.Rule, input *hookio.
 		result.Output = hookio.Allow()
 	}
 
+	// WorktreeCreate pass-through: if not blocked, echo back the worktree path
+	if !result.Blocked && input.HookEventName == hookio.EventWorktreeCreate && input.WorktreePath != "" {
+		result.Output = hookio.WorktreePassthrough(input.WorktreePath)
+	}
+
 	// Collect additionalContext from all inject_context actions and merge
 	var contexts []string
 	for _, ar := range allActionResults {

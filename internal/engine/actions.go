@@ -37,7 +37,7 @@ func ExecuteAction(ctx context.Context, action dsl.Action, actx *ActionContext) 
 	case dsl.NotifyAction:
 		return executeNotify(ctx, a, actx)
 	case dsl.DenyAction:
-		return executeDeny(a)
+		return executeDeny(a, actx)
 	case dsl.RunAction:
 		return executeRun(ctx, a, actx)
 	case dsl.RequireAction:
@@ -97,16 +97,30 @@ func executeNotify(ctx context.Context, a dsl.NotifyAction, actx *ActionContext)
 	}
 }
 
-func executeDeny(a dsl.DenyAction) *ActionResult {
+func executeDeny(a dsl.DenyAction, actx *ActionContext) *ActionResult {
 	reason := a.Reason
 	if reason == "" {
 		reason = "blocked by hitch rule"
 	}
 
-	return &ActionResult{
-		Output:      hookio.Deny(reason),
-		ActionTaken: "denied",
-		ShouldBlock: true,
+	hookEvent := ""
+	if actx != nil {
+		hookEvent = actx.HookEvent
+	}
+
+	switch hookEvent {
+	case hookio.EventTeammateIdle, hookio.EventTaskCreated, hookio.EventTaskCompleted:
+		return &ActionResult{
+			Output:      hookio.StopTeammate(reason),
+			ActionTaken: "denied",
+			ShouldBlock: true,
+		}
+	default:
+		return &ActionResult{
+			Output:      hookio.Deny(reason),
+			ActionTaken: "denied",
+			ShouldBlock: true,
+		}
 	}
 }
 

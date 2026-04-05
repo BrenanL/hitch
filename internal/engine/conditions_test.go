@@ -327,3 +327,39 @@ func TestEvalFocusIdle(t *testing.T) {
 		t.Error("expected not idle > 300s when 120s since last prompt")
 	}
 }
+
+func TestEvalBurnRateZero(t *testing.T) {
+	// When BurnRate is 0 (proxy unavailable or no data), burn_rate > 0 should be false.
+	ctx := &EvalContext{BurnRate: 0}
+	cond := dsl.BurnRateCondition{Op: ">", Threshold: 0}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for burn_rate > 0 when rate is 0")
+	}
+}
+
+func TestEvalFieldEqUnknownField(t *testing.T) {
+	// Unknown field names in FieldEqCondition should return false (fail safe).
+	ctx := &EvalContext{ErrorType: "rate_limit", TaskStatus: "completed"}
+	cond := dsl.FieldEqCondition{Field: "unknown_field", Value: "anything"}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for unknown field in FieldEqCondition")
+	}
+}
+
+func TestEvalContextSizeZero(t *testing.T) {
+	// When ContextSize is 0 (not populated), context_size > 0 should be false.
+	ctx := &EvalContext{ContextSize: 0}
+	cond := dsl.ContextSizeCondition{Op: ">", Threshold: 0}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for context_size > 0 when size is 0")
+	}
+}
+
+func TestEvalContextUsageZero(t *testing.T) {
+	// When ContextUsage is 0 (not populated), context_usage > 0 should be false.
+	ctx := &EvalContext{ContextUsage: 0.0}
+	cond := dsl.ContextUsageCondition{Op: ">", Threshold: 0.0}
+	if EvalCondition(cond, ctx) {
+		t.Error("expected false for context_usage > 0 when usage is 0")
+	}
+}

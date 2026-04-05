@@ -467,3 +467,121 @@ func TestExecutorInjectContextChaining(t *testing.T) {
 		t.Errorf("AdditionalContext = %q, want %q", result.Output.AdditionalContext, want)
 	}
 }
+
+// TestExecutorWorktreeCreatePassthrough verifies that a WorktreeCreate rule with no deny
+// echoes back the worktree_path in hookSpecificOutput (pass-through behavior per spec section 7.5).
+func TestExecutorWorktreeCreatePassthrough(t *testing.T) {
+	db, err := state.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	executor := &Executor{DB: db}
+
+	rule := &state.Rule{
+		ID:  "wt-log",
+		DSL: `on worktree-create -> log`,
+	}
+
+	input := &hookio.HookInput{
+		SessionID:     "s1",
+		HookEventName: "WorktreeCreate",
+		WorktreePath:  "/proj/.claude/worktrees/feature",
+	}
+
+	result := executor.Execute(context.Background(), rule, input)
+	if result.Error != nil {
+		t.Fatalf("Execute: %v", result.Error)
+	}
+	if result.Blocked {
+		t.Error("should not be blocked for log action")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	hso := result.Output.HookSpecificOutput
+	if hso == nil {
+		t.Fatal("HookSpecificOutput is nil — WorktreeCreate pass-through not set")
+	}
+	if hso["worktree_path"] != "/proj/.claude/worktrees/feature" {
+		t.Errorf("worktree_path = %v, want %q", hso["worktree_path"], "/proj/.claude/worktrees/feature")
+	}
+}
+
+// TestExecutorWorktreeCreateDenySkipsPassthrough verifies that a denied WorktreeCreate
+// does NOT apply the pass-through (the deny output takes precedence).
+func TestExecutorWorktreeCreateDenySkipsPassthrough(t *testing.T) {
+	db, err := state.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	executor := &Executor{DB: db}
+
+	rule := &state.Rule{
+		ID:  "wt-deny",
+		DSL: `on worktree-create -> deny "not allowed"`,
+	}
+
+	input := &hookio.HookInput{
+		SessionID:     "s1",
+		HookEventName: "WorktreeCreate",
+		WorktreePath:  "/proj/.claude/worktrees/feature",
+	}
+
+	result := executor.Execute(context.Background(), rule, input)
+	if !result.Blocked {
+		t.Error("expected blocked for deny action")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.Decision != "deny" {
+		t.Errorf("decision = %q, want %q", result.Output.Decision, "deny")
+	}
+	// Should not have worktree passthrough when blocked
+	if result.Output.HookSpecificOutput != nil {
+		t.Error("HookSpecificOutput should be nil when blocked")
+	}
+}
+
+// TestExecutorTeammateIdleDenyOutput verifies that deny on teammate-idle produces
+// {"continue": false, "stopReason": "..."} — not {"decision": "deny"} — per spec section 7.4.
+func TestExecutorTeammateIdleDenyOutput(t *testing.T) {
+	db, err := state.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory: %v", err)
+	}
+	defer db.Close()
+
+	executor := &Executor{DB: db}
+
+	rule := &state.Rule{
+		ID:  "idle-deny",
+		DSL: `on teammate-idle -> deny "stop idle teammate"`,
+	}
+
+	input := &hookio.HookInput{
+		SessionID:     "s1",
+		HookEventName: "TeammateIdle",
+	}
+
+	result := executor.Execute(context.Background(), rule, input)
+	if !result.Blocked {
+		t.Error("expected blocked")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.Decision != "" {
+		t.Errorf("TeammateIdle deny should not set decision field, got %q", result.Output.Decision)
+	}
+	if result.Output.Continue == nil || *result.Output.Continue != false {
+		t.Error("expected continue = false for TeammateIdle deny")
+	}
+	if result.Output.StopReason != "stop idle teammate" {
+		t.Errorf("stopReason = %q, want %q", result.Output.StopReason, "stop idle teammate")
+	}
+}
