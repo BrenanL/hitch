@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,13 +26,14 @@ type Model struct {
 
 // New creates a Model with placeholder tabs.
 func New() Model {
+	cwd, _ := os.Getwd()
 	return Model{
 		tabs: []tabModel{
-			placeholderTab{title: "Settings"},
-			placeholderTab{title: "Env Vars"},
-			placeholderTab{title: "Hooks"},
-			placeholderTab{title: "Memory"},
-			placeholderTab{title: "Explorer"},
+			NewSettingsTab(),
+			NewEnvVarsTab(),
+			NewHooksTab(cwd),
+			NewMemoryTab(cwd),
+			NewExplorerTab(cwd),
 		},
 	}
 }
