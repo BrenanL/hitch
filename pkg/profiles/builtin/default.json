@@ -1,0 +1,11 @@
+{
+  "name": "default",
+  "description": "Balanced settings — the daily driver",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium"
+  },
+  "settings": {
+    "effortLevel": "medium"
+  },
+  "tags": ["builtin"]
+}

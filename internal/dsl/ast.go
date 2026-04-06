@@ -122,3 +122,65 @@ type OrCondition struct {
 }
 
 func (OrCondition) conditionNode() {}
+
+// BurnRateCondition checks the current token burn rate.
+type BurnRateCondition struct {
+	Op        string  // >, <, >=, <=, =
+	Threshold float64 // fraction (0-1) or absolute tokens/min (>1)
+}
+
+func (BurnRateCondition) conditionNode() {}
+
+// ModelCondition checks the model identifier.
+type ModelCondition struct {
+	Substring string // case-insensitive
+}
+
+func (ModelCondition) conditionNode() {}
+
+// ContextSizeCondition checks the context token count.
+type ContextSizeCondition struct {
+	Op        string // >, <, >=, <=, =
+	Threshold int
+}
+
+func (ContextSizeCondition) conditionNode() {}
+
+// ContextUsageCondition checks the percentage of context window filled (0–100).
+type ContextUsageCondition struct {
+	Op        string  // >, <, >=, <=, =
+	Threshold float64 // percentage, 0–100
+}
+
+func (ContextUsageCondition) conditionNode() {}
+
+// FieldEqCondition checks an input field against a literal string value.
+// Used for error_type, task_status, and similar field equality checks.
+type FieldEqCondition struct {
+	Field string // "error_type", "task_status", etc.
+	Value string
+}
+
+func (FieldEqCondition) conditionNode() {}
+
+// SwitchProfileAction switches the active Hitch profile.
+type SwitchProfileAction struct {
+	Profile string
+}
+
+func (SwitchProfileAction) actionNode() {}
+
+// InjectContextAction adds text to the hook response's additionalContext.
+type InjectContextAction struct {
+	Text string
+}
+
+func (InjectContextAction) actionNode() {}
+
+// PruneAction signals SPEC-10's context pruning integration.
+// Tier is one of "gentle", "moderate", "aggressive", "emergency".
+type PruneAction struct {
+	Tier string
+}
+
+func (PruneAction) actionNode() {}

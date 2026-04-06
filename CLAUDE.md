@@ -38,7 +38,7 @@ During development and testing, prefer project-scoped `.claude/settings.json` to
 - **Config directories:** `~/.hitch/` (global), `.hitch/` (project)
 - **DSL file extension:** `.hitch`
 - **Go module path:** `github.com/BrenanL/hitch`
-- **`pkg/hookio/`** is the only public (importable) package. Everything else lives in `internal/`.
+- **`pkg/`** contains public (importable) packages: `hookio`, `settings`, `envvars`, `sessions`. Everything else lives in `internal/`.
 - **Platforms:** macOS (arm64/amd64), Linux (amd64/arm64), Windows WSL. Native Windows is not a v1 target.
 - **WSL detection:** `uname -r` containing `microsoft`. Route desktop notifications and focus detection through PowerShell interop.
 
@@ -67,8 +67,14 @@ Claude Code  --HTTP-->  Hitch Proxy (localhost:9800)  --HTTPS-->  api.anthropic.
 | `internal/state/` | SQLite database layer: channels, rules, events, sessions, kv, mute, api_requests |
 | `internal/credentials/` | age encryption + env var fallback |
 | `internal/platform/` | OS/WSL detection, platform-specific notifications |
+| `internal/pricing/` | Cost estimation by model string (extracted from proxy/cost.go) |
+| `internal/tokens/` | Token estimation (chars/4 heuristic) |
+| `internal/metrics/` | Burn rate and token velocity calculations |
 | `internal/proxy/` | Transparent API logging proxy: server, forwarding, SSE, cost, detection, analysis |
 | `pkg/hookio/` | **Public library** -- parse hook stdin JSON, build stdout JSON responses |
+| `pkg/settings/` | **Public library** -- Claude Code settings.json load, parse, merge, validate |
+| `pkg/envvars/` | **Public library** -- Claude Code environment variable registry and validation |
+| `pkg/sessions/` | **Public library** -- Claude Code session transcript JSONL parser and analysis |
 | `integration/` | End-to-end tests (separate package from SUT) |
 
 ### Key Data Flow
@@ -87,10 +93,10 @@ Claude Code  --HTTP-->  Hitch Proxy (localhost:9800)  --HTTPS-->  api.anthropic.
 
 ## DSL
 
-- 12+ event types mapping to Claude Code hook events
+- 26+ event types mapping to Claude Code hook events
 - Shorthand events like `pre-bash` and `post-edit` auto-set both event type and matcher
-- Conditions support: `elapsed`, `away`/`focused`/`idle`, `matches`/`file matches`/`command matches`, `deny-list:name`, boolean operators
-- Actions chain with `->`: `on stop -> summarize -> notify slack`
+- Conditions support: `elapsed`, `away`/`focused`/`idle`, `matches`/`file matches`/`command matches`, `deny-list:name`, `burn_rate`, `model contains`, `context_size`, `context_usage`, `error_type`, `task_status`, boolean operators
+- Actions chain with `->`: `on stop -> summarize -> notify slack`, `inject_context`, `switch_profile`, `prune`
 - Parser produces errors with line numbers and suggestions for typos
 
 ## Proxy

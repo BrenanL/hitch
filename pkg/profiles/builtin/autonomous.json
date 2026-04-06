@@ -1,0 +1,11 @@
+{
+  "name": "autonomous",
+  "description": "Minimal friction — auto-approve safe operations",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "high"
+  },
+  "settings": {
+    "effortLevel": "high"
+  },
+  "tags": ["builtin", "automation"]
+}

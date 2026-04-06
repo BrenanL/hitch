@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+// newEmptySettings returns an empty Settings for use in tests.
+func newEmptySettings() *Settings {
+	s, _ := ParseSettings([]byte(`{}`))
+	return s
+}
+
 func TestParseSettingsEmpty(t *testing.T) {
 	s, err := ParseSettings([]byte(`{}`))
 	if err != nil {
@@ -51,10 +57,7 @@ func TestParseSettingsInvalidJSON(t *testing.T) {
 }
 
 func TestMergeHooksAddNew(t *testing.T) {
-	s := &Settings{
-		Hooks: make(map[string][]MatcherGroup),
-		raw:   make(map[string]json.RawMessage),
-	}
+	s := newEmptySettings()
 	manifest := &Manifest{Rules: make(map[string]ManifestEntry)}
 
 	entries := []*HookEntryInfo{
@@ -170,10 +173,7 @@ func TestMergeHooksRemovesOld(t *testing.T) {
 }
 
 func TestMergeHooksIdempotent(t *testing.T) {
-	s := &Settings{
-		Hooks: make(map[string][]MatcherGroup),
-		raw:   make(map[string]json.RawMessage),
-	}
+	s := newEmptySettings()
 	manifest := &Manifest{Rules: make(map[string]ManifestEntry)}
 
 	entries := []*HookEntryInfo{

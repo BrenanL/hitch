@@ -198,3 +198,147 @@ func TestExecuteLogActionWithDB(t *testing.T) {
 		t.Error("log action should write an event to the database")
 	}
 }
+
+func TestExecuteInjectContextAction(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "InstructionsLoaded",
+		Input:     &hookio.HookInput{},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.InjectContextAction{Text: "hello world"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "inject-context" {
+		t.Errorf("action = %q, want inject-context", result.ActionTaken)
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.AdditionalContext != "hello world" {
+		t.Errorf("AdditionalContext = %q, want %q", result.Output.AdditionalContext, "hello world")
+	}
+}
+
+func TestExecuteSwitchProfileAction(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "SubagentStart",
+		Input:     &hookio.HookInput{},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.SwitchProfileAction{Profile: "conservative"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "switch-profile:conservative" {
+		t.Errorf("action = %q, want switch-profile:conservative", result.ActionTaken)
+	}
+}
+
+func TestExecutePruneActionNoPruner(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent:  "PreCompact",
+		Input:      &hookio.HookInput{},
+		PrunerFunc: nil,
+	}
+
+	result := ExecuteAction(context.Background(), dsl.PruneAction{Tier: "gentle"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "prune-noop" {
+		t.Errorf("action = %q, want prune-noop", result.ActionTaken)
+	}
+}
+
+func TestExecutePruneActionWithPruner(t *testing.T) {
+	var gotTier string
+	actx := &ActionContext{
+		HookEvent: "PreCompact",
+		Input:     &hookio.HookInput{},
+		PrunerFunc: func(tier string) error {
+			gotTier = tier
+			return nil
+		},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.PruneAction{Tier: "standard"}, actx)
+	if result.Error != nil {
+		t.Fatalf("ExecuteAction: %v", result.Error)
+	}
+	if result.ActionTaken != "prune:standard" {
+		t.Errorf("action = %q, want prune:standard", result.ActionTaken)
+	}
+	if gotTier != "standard" {
+		t.Errorf("tier passed to PrunerFunc = %q, want %q", gotTier, "standard")
+	}
+}
+
+// TestExecuteDenyTeammateIdleOutput verifies that deny on a TeammateIdle event
+// produces {"continue": false, "stopReason": "..."} instead of {"decision": "deny"}.
+// This is the blocking format required for teammate/task events per spec section 7.4.
+func TestExecuteDenyTeammateIdleOutput(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "TeammateIdle",
+		Input:     &hookio.HookInput{HookEventName: "TeammateIdle"},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.DenyAction{Reason: "too many tasks"}, actx)
+	if !result.ShouldBlock {
+		t.Error("expected ShouldBlock = true")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.Decision != "" {
+		t.Errorf("TeammateIdle deny should not set decision field, got %q", result.Output.Decision)
+	}
+	if result.Output.Continue == nil || *result.Output.Continue != false {
+		t.Error("expected continue = false for TeammateIdle deny")
+	}
+	if result.Output.StopReason != "too many tasks" {
+		t.Errorf("stopReason = %q, want %q", result.Output.StopReason, "too many tasks")
+	}
+}
+
+// TestExecuteDenyTaskCreatedOutput verifies that deny on TaskCreated also uses StopTeammate format.
+func TestExecuteDenyTaskCreatedOutput(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "TaskCreated",
+		Input:     &hookio.HookInput{HookEventName: "TaskCreated"},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.DenyAction{Reason: "task not allowed"}, actx)
+	if !result.ShouldBlock {
+		t.Error("expected ShouldBlock = true")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.Decision != "" {
+		t.Errorf("TaskCreated deny should not set decision field, got %q", result.Output.Decision)
+	}
+	if result.Output.Continue == nil || *result.Output.Continue != false {
+		t.Error("expected continue = false for TaskCreated deny")
+	}
+}
+
+// TestExecuteDenyStandardEventUsesDecision verifies that deny on a standard blocking event
+// (e.g., PreToolUse) still produces the {"decision": "deny"} format.
+func TestExecuteDenyStandardEventUsesDecision(t *testing.T) {
+	actx := &ActionContext{
+		HookEvent: "PreToolUse",
+		Input:     &hookio.HookInput{HookEventName: "PreToolUse"},
+	}
+
+	result := ExecuteAction(context.Background(), dsl.DenyAction{Reason: "blocked"}, actx)
+	if !result.ShouldBlock {
+		t.Error("expected ShouldBlock = true")
+	}
+	if result.Output == nil {
+		t.Fatal("output is nil")
+	}
+	if result.Output.Decision != "deny" {
+		t.Errorf("decision = %q, want %q", result.Output.Decision, "deny")
+	}
+}

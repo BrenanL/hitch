@@ -20,6 +20,7 @@ type ActionContext struct {
 	HookEvent   string
 	RuleID      string
 	Input       *hookio.HookInput
+	PrunerFunc  func(tier string) error
 }
 
 // ActionResult is the outcome of executing an action.
@@ -36,7 +37,7 @@ func ExecuteAction(ctx context.Context, action dsl.Action, actx *ActionContext) 
 	case dsl.NotifyAction:
 		return executeNotify(ctx, a, actx)
 	case dsl.DenyAction:
-		return executeDeny(a)
+		return executeDeny(a, actx)
 	case dsl.RunAction:
 		return executeRun(ctx, a, actx)
 	case dsl.RequireAction:
@@ -45,6 +46,12 @@ func ExecuteAction(ctx context.Context, action dsl.Action, actx *ActionContext) 
 		return executeSummarize(actx)
 	case dsl.LogAction:
 		return executeLog(actx)
+	case dsl.SwitchProfileAction:
+		return executeSwitchProfile(ctx, a, actx)
+	case dsl.InjectContextAction:
+		return executeInjectContext(a)
+	case dsl.PruneAction:
+		return executePrune(a, actx)
 	default:
 		return &ActionResult{Error: fmt.Errorf("unknown action type: %T", action)}
 	}
@@ -90,16 +97,30 @@ func executeNotify(ctx context.Context, a dsl.NotifyAction, actx *ActionContext)
 	}
 }
 
-func executeDeny(a dsl.DenyAction) *ActionResult {
+func executeDeny(a dsl.DenyAction, actx *ActionContext) *ActionResult {
 	reason := a.Reason
 	if reason == "" {
 		reason = "blocked by hitch rule"
 	}
 
-	return &ActionResult{
-		Output:      hookio.Deny(reason),
-		ActionTaken: "denied",
-		ShouldBlock: true,
+	hookEvent := ""
+	if actx != nil {
+		hookEvent = actx.HookEvent
+	}
+
+	switch hookEvent {
+	case hookio.EventTeammateIdle, hookio.EventTaskCreated, hookio.EventTaskCompleted:
+		return &ActionResult{
+			Output:      hookio.StopTeammate(reason),
+			ActionTaken: "denied",
+			ShouldBlock: true,
+		}
+	default:
+		return &ActionResult{
+			Output:      hookio.Deny(reason),
+			ActionTaken: "denied",
+			ShouldBlock: true,
+		}
 	}
 }
 
@@ -182,4 +203,34 @@ func executeLog(actx *ActionContext) *ActionResult {
 	return &ActionResult{
 		ActionTaken: "logged",
 	}
+}
+
+func executeSwitchProfile(ctx context.Context, a dsl.SwitchProfileAction, actx *ActionContext) *ActionResult {
+	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "ht", "profile", "switch", a.Profile)
+	if actx.Input != nil {
+		cmd.Dir = actx.Input.Cwd
+	}
+	_, _ = cmd.CombinedOutput()
+
+	return &ActionResult{ActionTaken: fmt.Sprintf("switch-profile:%s", a.Profile)}
+}
+
+func executeInjectContext(a dsl.InjectContextAction) *ActionResult {
+	return &ActionResult{
+		Output:      &hookio.HookOutput{AdditionalContext: a.Text},
+		ActionTaken: "inject-context",
+	}
+}
+
+func executePrune(a dsl.PruneAction, actx *ActionContext) *ActionResult {
+	if actx == nil || actx.PrunerFunc == nil {
+		return &ActionResult{ActionTaken: "prune-noop"}
+	}
+	if err := actx.PrunerFunc(a.Tier); err != nil {
+		return &ActionResult{ActionTaken: "prune-error", Error: err}
+	}
+	return &ActionResult{ActionTaken: fmt.Sprintf("prune:%s", a.Tier)}
 }

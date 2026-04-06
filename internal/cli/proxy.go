@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,6 +45,8 @@ model, cost, and latency. Detects context stripping and tool result truncation b
 		newProxyAnalyzeCmd(),
 		newProxyInstallCmd(),
 		newProxyUpdatePricingCmd(),
+		newProxyWhyCmd(),
+		newProxyGapsCmd(),
 	)
 	return cmd
 }
@@ -362,7 +365,188 @@ func runProxyInspect(cmd *cobra.Command, args []string) error {
 	if r.ResponseLogPath != "" {
 		fmt.Printf("Response Log:  %s\n", r.ResponseLogPath)
 	}
+
+	if r.RequestLogPath != "" {
+		bd, err := proxy.ParseRequestFile(r.RequestLogPath, r.InputTokens, r.CacheReadTokens, r.CacheCreationTokens)
+		if err != nil {
+			fmt.Printf("\n(parse error: %v)\n", err)
+			return nil
+		}
+		printBreakdown(bd)
+	}
+
 	return nil
+}
+
+func printBreakdown(bd *proxy.RequestBreakdown) {
+	fmt.Printf("\n── Token Breakdown (estimated, chars/4) ──────────────────────────────────────\n")
+
+	if bd.ActualInputTokens > 0 {
+		diff := bd.TotalEstimatedTokens - bd.ActualInputTokens
+		pctOff := float64(diff) / float64(bd.ActualInputTokens) * 100
+		if pctOff < 0 {
+			pctOff = -pctOff
+		}
+		fmt.Printf("  Note: Estimated total %s tok vs actual %s (~%.0f%% off — expected)\n\n",
+			formatTokenCount(bd.TotalEstimatedTokens),
+			formatTokenCount(bd.ActualInputTokens),
+			pctOff)
+	}
+
+	// System components
+	for _, c := range bd.SystemComponents {
+		dominant := ""
+		if bd.TotalEstimatedTokens > 0 && float64(c.EstimatedTokens)/float64(bd.TotalEstimatedTokens) > 0.5 {
+			dominant = "  ◀ DOMINANT"
+		}
+		fmt.Printf("  %-44s %8s tok  %5.1f%%%s\n",
+			truncateLabel(c.Label, 44),
+			formatTokenCount(c.EstimatedTokens),
+			c.Percentage,
+			dominant)
+	}
+
+	// Tool definitions
+	if bd.Tools.EstimatedTokens > 0 {
+		dominant := ""
+		if bd.TotalEstimatedTokens > 0 && float64(bd.Tools.EstimatedTokens)/float64(bd.TotalEstimatedTokens) > 0.5 {
+			dominant = "  ◀ DOMINANT"
+		}
+		fmt.Printf("  %-44s %8s tok  %5.1f%%%s\n",
+			truncateLabel(bd.Tools.Label, 44),
+			formatTokenCount(bd.Tools.EstimatedTokens),
+			bd.Tools.Percentage,
+			dominant)
+	}
+
+	// Aggregate conversation and tool results
+	convTokens := 0
+	toolResultTokens := 0
+	convMsgCount := 0
+	for _, m := range bd.Messages {
+		for _, p := range m.Parts {
+			switch p.Category {
+			case "tool_result":
+				toolResultTokens += p.EstimatedTokens
+			case "user_text", "assistant_text", "tool_call":
+				convTokens += p.EstimatedTokens
+			}
+		}
+		if m.EstimatedTokens > 0 {
+			convMsgCount++
+		}
+	}
+
+	if convTokens > 0 {
+		convPct := 0.0
+		if bd.TotalEstimatedTokens > 0 {
+			convPct = float64(convTokens) / float64(bd.TotalEstimatedTokens) * 100
+		}
+		dominant := ""
+		if convPct > 50 {
+			dominant = "  ◀ DOMINANT"
+		}
+		fmt.Printf("  %-44s %8s tok  %5.1f%%%s\n",
+			fmt.Sprintf("Conversation history (%d messages)", convMsgCount),
+			formatTokenCount(convTokens),
+			convPct,
+			dominant)
+	}
+
+	if toolResultTokens > 0 {
+		trPct := 0.0
+		if bd.TotalEstimatedTokens > 0 {
+			trPct = float64(toolResultTokens) / float64(bd.TotalEstimatedTokens) * 100
+		}
+		dominant := ""
+		if trPct > 50 {
+			dominant = "  ◀ DOMINANT"
+		}
+		fmt.Printf("  %-44s %8s tok  %5.1f%%%s\n",
+			"Tool results",
+			formatTokenCount(toolResultTokens),
+			trPct,
+			dominant)
+	}
+
+	// Largest components
+	if len(bd.LargestComponents) > 0 {
+		fmt.Printf("\n── Largest Components ────────────────────────────────────────────────────────\n")
+		for _, c := range bd.LargestComponents {
+			fmt.Printf("  %-52s %8s tok  %5.1f%%\n",
+				truncateLabel(c.Label, 52),
+				formatTokenCount(c.EstimatedTokens),
+				c.Percentage)
+		}
+	}
+
+	// Tool calls summary
+	if len(bd.ToolCalls) > 0 {
+		fmt.Printf("\n── Tool Calls ────────────────────────────────────────────────────────────────\n")
+		counts := map[string]int{}
+		for _, tc := range bd.ToolCalls {
+			counts[tc.ToolName]++
+		}
+		var parts []string
+		for name, n := range counts {
+			parts = append(parts, fmt.Sprintf("%s × %d", name, n))
+		}
+		fmt.Printf("  %s\n", strings.Join(parts, "    "))
+	}
+
+	// Flags
+	var flags []string
+	if bd.ActualInputTokens > 0 && bd.CacheReadTokens > 0 {
+		cacheLabel := "low"
+		if bd.CacheReadPct > 60 {
+			cacheLabel = "healthy"
+		}
+		flags = append(flags, fmt.Sprintf("INFO  Cache read %.1f%% — %s", bd.CacheReadPct, cacheLabel))
+	}
+	if bd.ThinkingBudgetTokens > 0 {
+		flags = append(flags, fmt.Sprintf("INFO  Thinking budget: %s tok", formatTokenCount(bd.ThinkingBudgetTokens)))
+	}
+	for _, c := range bd.LargestComponents {
+		if c.Category == "tool_result" && c.EstimatedTokens > 10000 {
+			if !strings.HasPrefix(c.Label, "File:") {
+				flags = append(flags, fmt.Sprintf("WARN  Large tool result without file path (%s tok) — may be session transcript",
+					formatTokenCount(c.EstimatedTokens)))
+				break
+			}
+		}
+	}
+
+	if len(flags) > 0 {
+		fmt.Printf("\n── Flags ─────────────────────────────────────────────────────────────────────\n")
+		for _, f := range flags {
+			fmt.Printf("  %s\n", f)
+		}
+	}
+}
+
+func formatTokenCount(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	s := strconv.Itoa(n)
+	result := make([]byte, 0, len(s)+len(s)/3)
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
+}
+
+func truncateLabel(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // --- sessions ---
@@ -793,6 +977,52 @@ func formatBytes(b int) string {
 	}
 }
 
+// --- why ---
+
+func newProxyWhyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "why <id>",
+		Short: "Explain why a request cost so much",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runProxyWhy,
+	}
+}
+
+func runProxyWhy(cmd *cobra.Command, args []string) error {
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid request ID: %w", err)
+	}
+
+	db, _, err := openDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	r, err := db.GetRequest(id)
+	if err != nil {
+		return fmt.Errorf("request %d not found: %w", id, err)
+	}
+
+	pricing := proxy.LoadPricing()
+	cost := pricing.EstimateCost(r.Model, r.InputTokens, r.OutputTokens,
+		r.CacheReadTokens, r.CacheCreationTokens)
+
+	if r.RequestLogPath == "" {
+		return fmt.Errorf("no request log file for request %d", id)
+	}
+
+	bd, err := proxy.ParseRequestFile(r.RequestLogPath, r.InputTokens, r.CacheReadTokens, r.CacheCreationTokens)
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	bd.RequestID = fmt.Sprintf("%d", id)
+	fmt.Println(proxy.GenerateWhySummary(bd, cost))
+	return nil
+}
+
 // --- stats ---
 
 func newProxyStatsCmd() *cobra.Command {
@@ -987,6 +1217,191 @@ func runProxyUpdatePricing(cmd *cobra.Command, args []string) error {
 				model, p.Input, p.Output, p.CacheWrite, p.CacheRead)
 		}
 	}
+	return nil
+}
+
+// --- gaps ---
+
+func newProxyGapsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gaps",
+		Short: "Detect proxy log gaps and false rate-limit incidents",
+		Long: `Correlates StopFailure hook events with proxy log entries to detect requests
+that bypassed the proxy. Also scans for sessions with silent intervals > 60s.`,
+		RunE: runProxyGaps,
+	}
+	cmd.Flags().String("since", "24h", "Look back this far (e.g. 1h, 4h, 24h, 7d)")
+	cmd.Flags().String("session", "", "Restrict to a specific session ID")
+	return cmd
+}
+
+// proxyGapInterval records a detected silent interval in a session's request stream.
+type proxyGapInterval struct {
+	SessionID string
+	GapStart  string
+	GapEnd    string
+	GapSec    int64
+}
+
+func runProxyGaps(cmd *cobra.Command, args []string) error {
+	sinceStr, _ := cmd.Flags().GetString("since")
+	sessionFilter, _ := cmd.Flags().GetString("session")
+
+	dur, err := parseDuration(sinceStr)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", sinceStr, err)
+	}
+	since := time.Now().UTC().Add(-dur).Format("2006-01-02T15:04:05")
+
+	db, _, err := openDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	fmt.Printf("Analyzing proxy log vs StopFailure events (last %s)...\n\n", sinceStr)
+
+	// Step 1: Query StopFailure events in the window.
+	stopFailures, err := db.QueryStopFailureEvents(since, "")
+	if err != nil {
+		return fmt.Errorf("querying StopFailure events: %w", err)
+	}
+
+	// Filter by session if requested.
+	if sessionFilter != "" {
+		var filtered []state.Event
+		for _, e := range stopFailures {
+			if strings.HasPrefix(e.SessionID, sessionFilter) {
+				filtered = append(filtered, e)
+			}
+		}
+		stopFailures = filtered
+	}
+
+	// Step 2: For each StopFailure event, look for a proxy log entry within ±30s.
+	type unmatchedEvent struct {
+		Timestamp string
+		SessionID string
+	}
+	var matched int
+	var unmatched []unmatchedEvent
+
+	for _, ev := range stopFailures {
+		nearby, err := db.QueryRequestsNear(ev.Timestamp, 30, ev.SessionID)
+		if err != nil {
+			return fmt.Errorf("querying requests near %s: %w", ev.Timestamp, err)
+		}
+		if len(nearby) > 0 {
+			matched++
+		} else {
+			unmatched = append(unmatched, unmatchedEvent{
+				Timestamp: ev.Timestamp,
+				SessionID: ev.SessionID,
+			})
+		}
+	}
+
+	// Step 3: Scan proxy log for per-session silent intervals > 60s.
+	// Build a map of sessions active in the window.
+	recentRequests, err := db.QueryRecentRequests(10000, sessionFilter)
+	if err != nil {
+		return fmt.Errorf("querying recent requests: %w", err)
+	}
+
+	// Filter to those within our time window and group by session.
+	sessionRequests := map[string][]string{} // sessionID -> sorted timestamps
+	for _, r := range recentRequests {
+		if r.Timestamp < since {
+			continue
+		}
+		if r.SessionID == "" {
+			continue
+		}
+		sessionRequests[r.SessionID] = append(sessionRequests[r.SessionID], r.Timestamp)
+	}
+
+	// Sort each session's timestamps ascending.
+	for sid := range sessionRequests {
+		ts := sessionRequests[sid]
+		sort.Strings(ts)
+		sessionRequests[sid] = ts
+	}
+
+	// Find gaps > 60s within each session.
+	var gaps []proxyGapInterval
+	for sid, timestamps := range sessionRequests {
+		for i := 1; i < len(timestamps); i++ {
+			t1, err1 := time.Parse("2006-01-02T15:04:05", timestamps[i-1][:19])
+			t2, err2 := time.Parse("2006-01-02T15:04:05", timestamps[i][:19])
+			if err1 != nil || err2 != nil {
+				// Try RFC3339 format
+				t1, err1 = time.Parse(time.RFC3339, timestamps[i-1])
+				t2, err2 = time.Parse(time.RFC3339, timestamps[i])
+				if err1 != nil || err2 != nil {
+					continue
+				}
+			}
+			gapSec := int64(t2.Sub(t1).Seconds())
+			if gapSec > 60 {
+				gaps = append(gaps, proxyGapInterval{
+					SessionID: sid,
+					GapStart:  timestamps[i-1],
+					GapEnd:    timestamps[i],
+					GapSec:    gapSec,
+				})
+			}
+		}
+	}
+
+	// Print results.
+	totalStop := len(stopFailures)
+	totalUnmatched := len(unmatched)
+
+	if totalStop == 0 && len(gaps) == 0 {
+		fmt.Printf("No gaps or unmatched StopFailure events in the last %s.\n", sinceStr)
+		return nil
+	}
+
+	if totalStop > 0 {
+		fmt.Printf("  StopFailure events:   %d  (hook_event=StopFailure)\n", totalStop)
+		fmt.Printf("  Matched to proxy:     %d  (proxy saw the request)\n", matched)
+		fmt.Printf("  Unmatched (bypassed): %d  <- requests that bypassed the proxy\n", totalUnmatched)
+		fmt.Println()
+	}
+
+	if totalUnmatched > 0 {
+		fmt.Println("Unmatched StopFailure events:")
+		for _, u := range unmatched {
+			ts := u.Timestamp
+			if len(ts) > 19 {
+				ts = ts[:19]
+			}
+			sid := u.SessionID
+			if len(sid) > 8 {
+				sid = shortSessionID(sid)
+			}
+			fmt.Printf("  %s  session=%-8s  (no proxy entry within ±30s)\n", ts, sid)
+		}
+		fmt.Println()
+		fmt.Printf("  WARN: %d of %d StopFailure events have no proxy record. Check that Claude Code\n", totalUnmatched, totalStop)
+		fmt.Printf("        is routing all API calls through the proxy (ANTHROPIC_BASE_URL set?).\n")
+		fmt.Println()
+	}
+
+	if len(gaps) > 0 {
+		fmt.Println("Proxy gaps (sessions with >60s silent intervals while active):")
+		for _, g := range gaps {
+			ts := g.GapStart
+			if idx := strings.Index(ts, "T"); idx > 0 {
+				ts = ts[idx+1:]
+			}
+			if len(ts) > 8 {
+				ts = ts[:8]
+			}
+			fmt.Printf("  session=%-8s  gap at %s (%ds)\n", shortSessionID(g.SessionID), ts, g.GapSec)
+		}
+	}
+
 	return nil
 }
 

@@ -304,3 +304,429 @@ func TestCommandAndFilePathOnNonToolInput(t *testing.T) {
 		t.Errorf("FilePath() on non-tool event should be empty")
 	}
 }
+
+func TestStopFailureTyped(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "StopFailure",
+		"error_type": "timeout",
+		"error_message": "operation timed out"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	sf := hi.StopFailure()
+	if sf == nil {
+		t.Fatal("StopFailure() returned nil")
+	}
+	if sf.ErrorType != "timeout" {
+		t.Errorf("ErrorType = %q, want %q", sf.ErrorType, "timeout")
+	}
+	if sf.ErrorMessage != "operation timed out" {
+		t.Errorf("ErrorMessage = %q, want %q", sf.ErrorMessage, "operation timed out")
+	}
+}
+
+func TestStopFailureWrongEvent(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Stop"
+	}`
+	hi, _ := ReadInput(strings.NewReader(input))
+	if hi.StopFailure() != nil {
+		t.Error("StopFailure() should return nil for wrong event type")
+	}
+}
+
+func TestTaskTypedCreated(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "TaskCreated",
+		"task_id": "task-123",
+		"task_subject": "Fix bug",
+		"task_description": "Detailed description",
+		"teammate_name": "alice",
+		"team_name": "alpha"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	ti := hi.Task()
+	if ti == nil {
+		t.Fatal("Task() returned nil")
+	}
+	if ti.TaskID != "task-123" {
+		t.Errorf("TaskID = %q, want %q", ti.TaskID, "task-123")
+	}
+	if ti.TaskSubject != "Fix bug" {
+		t.Errorf("TaskSubject = %q, want %q", ti.TaskSubject, "Fix bug")
+	}
+	if ti.TaskDescription != "Detailed description" {
+		t.Errorf("TaskDescription = %q, want %q", ti.TaskDescription, "Detailed description")
+	}
+	if ti.TeammateNameHook != "alice" {
+		t.Errorf("TeammateNameHook = %q, want %q", ti.TeammateNameHook, "alice")
+	}
+	if ti.TeamName != "alpha" {
+		t.Errorf("TeamName = %q, want %q", ti.TeamName, "alpha")
+	}
+}
+
+func TestTaskTypedCompleted(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "TaskCompleted",
+		"task_id": "task-456",
+		"task_subject": "Deploy service"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	ti := hi.Task()
+	if ti == nil {
+		t.Fatal("Task() returned nil for TaskCompleted")
+	}
+	if ti.TaskID != "task-456" {
+		t.Errorf("TaskID = %q, want %q", ti.TaskID, "task-456")
+	}
+}
+
+func TestTaskWrongEvent(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Stop"
+	}`
+	hi, _ := ReadInput(strings.NewReader(input))
+	if hi.Task() != nil {
+		t.Error("Task() should return nil for wrong event type")
+	}
+}
+
+func TestConfigChangeTyped(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "ConfigChange",
+		"config_source": "project_settings"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	cc := hi.ConfigChange()
+	if cc == nil {
+		t.Fatal("ConfigChange() returned nil")
+	}
+	if cc.ConfigSource != "project_settings" {
+		t.Errorf("ConfigSource = %q, want %q", cc.ConfigSource, "project_settings")
+	}
+}
+
+func TestConfigChangeWrongEvent(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Stop"
+	}`
+	hi, _ := ReadInput(strings.NewReader(input))
+	if hi.ConfigChange() != nil {
+		t.Error("ConfigChange() should return nil for wrong event type")
+	}
+}
+
+func TestWorktreeTypedCreate(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "WorktreeCreate",
+		"worktree_path": "/proj/.claude/worktrees/feature",
+		"target_branch": "feature/new-thing",
+		"source_branch": "main"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	wt := hi.Worktree()
+	if wt == nil {
+		t.Fatal("Worktree() returned nil")
+	}
+	if wt.WorktreePath != "/proj/.claude/worktrees/feature" {
+		t.Errorf("WorktreePath = %q, want %q", wt.WorktreePath, "/proj/.claude/worktrees/feature")
+	}
+	if wt.TargetBranch != "feature/new-thing" {
+		t.Errorf("TargetBranch = %q, want %q", wt.TargetBranch, "feature/new-thing")
+	}
+	if wt.SourceBranch != "main" {
+		t.Errorf("SourceBranch = %q, want %q", wt.SourceBranch, "main")
+	}
+}
+
+func TestWorktreeTypedRemove(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "WorktreeRemove",
+		"worktree_path": "/proj/.claude/worktrees/old"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	wt := hi.Worktree()
+	if wt == nil {
+		t.Fatal("Worktree() returned nil for WorktreeRemove")
+	}
+	if wt.WorktreePath != "/proj/.claude/worktrees/old" {
+		t.Errorf("WorktreePath = %q, want %q", wt.WorktreePath, "/proj/.claude/worktrees/old")
+	}
+}
+
+func TestWorktreeWrongEvent(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Stop"
+	}`
+	hi, _ := ReadInput(strings.NewReader(input))
+	if hi.Worktree() != nil {
+		t.Error("Worktree() should return nil for wrong event type")
+	}
+}
+
+func TestElicitationTyped(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Elicitation",
+		"server_name": "my-mcp-server",
+		"tool_name": "some_tool",
+		"elicitation_schema": {"type": "object"}
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	el := hi.Elicitation()
+	if el == nil {
+		t.Fatal("Elicitation() returned nil")
+	}
+	if el.ServerName != "my-mcp-server" {
+		t.Errorf("ServerName = %q, want %q", el.ServerName, "my-mcp-server")
+	}
+	if el.ToolName != "some_tool" {
+		t.Errorf("ToolName = %q, want %q", el.ToolName, "some_tool")
+	}
+	if el.ElicitationSchema == nil {
+		t.Error("ElicitationSchema should not be nil")
+	}
+}
+
+func TestElicitationResultTyped(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "ElicitationResult",
+		"server_name": "my-mcp-server",
+		"tool_name": "some_tool",
+		"user_action": "accept",
+		"user_content": {"answer": "yes"}
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	el := hi.Elicitation()
+	if el == nil {
+		t.Fatal("Elicitation() returned nil for ElicitationResult")
+	}
+	if el.UserAction != "accept" {
+		t.Errorf("UserAction = %q, want %q", el.UserAction, "accept")
+	}
+	if el.UserContent == nil {
+		t.Error("UserContent should not be nil")
+	}
+}
+
+func TestElicitationWrongEvent(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "Stop"
+	}`
+	hi, _ := ReadInput(strings.NewReader(input))
+	if hi.Elicitation() != nil {
+		t.Error("Elicitation() should return nil for wrong event type")
+	}
+}
+
+func TestReadInputTeammateIdle(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "TeammateIdle",
+		"teammate_name": "bob",
+		"team_name": "beta",
+		"pending_task_count": 3
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "TeammateIdle" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "TeammateIdle")
+	}
+	if hi.TeammateNameHook != "bob" {
+		t.Errorf("TeammateNameHook = %q, want %q", hi.TeammateNameHook, "bob")
+	}
+	if hi.TeamName != "beta" {
+		t.Errorf("TeamName = %q, want %q", hi.TeamName, "beta")
+	}
+	if hi.PendingTaskCount != 3 {
+		t.Errorf("PendingTaskCount = %d, want 3", hi.PendingTaskCount)
+	}
+}
+
+func TestReadInputInstructionsLoaded(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "InstructionsLoaded",
+		"file_path": "/proj/CLAUDE.md",
+		"memory_type": "project",
+		"load_reason": "session_start"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "InstructionsLoaded" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "InstructionsLoaded")
+	}
+	if hi.EventFilePath != "/proj/CLAUDE.md" {
+		t.Errorf("EventFilePath = %q, want %q", hi.EventFilePath, "/proj/CLAUDE.md")
+	}
+	if hi.MemoryType != "project" {
+		t.Errorf("MemoryType = %q, want %q", hi.MemoryType, "project")
+	}
+	if hi.LoadReason != "session_start" {
+		t.Errorf("LoadReason = %q, want %q", hi.LoadReason, "session_start")
+	}
+}
+
+func TestReadInputCwdChanged(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/new/path",
+		"hook_event_name": "CwdChanged",
+		"old_cwd": "/old/path",
+		"new_cwd": "/new/path"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "CwdChanged" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "CwdChanged")
+	}
+	if hi.OldCwd != "/old/path" {
+		t.Errorf("OldCwd = %q, want %q", hi.OldCwd, "/old/path")
+	}
+	if hi.NewCwd != "/new/path" {
+		t.Errorf("NewCwd = %q, want %q", hi.NewCwd, "/new/path")
+	}
+}
+
+func TestReadInputFileChanged(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "FileChanged",
+		"file_path": "/proj/main.go",
+		"change_type": "modified"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "FileChanged" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "FileChanged")
+	}
+	if hi.EventFilePath != "/proj/main.go" {
+		t.Errorf("EventFilePath = %q, want %q", hi.EventFilePath, "/proj/main.go")
+	}
+	if hi.ChangeType != "modified" {
+		t.Errorf("ChangeType = %q, want %q", hi.ChangeType, "modified")
+	}
+}
+
+func TestReadInputPermissionDenied(t *testing.T) {
+	input := `{
+		"session_id": "s1",
+		"cwd": "/proj",
+		"hook_event_name": "PermissionDenied",
+		"tool_name": "Bash",
+		"reason": "blocked by policy"
+	}`
+	hi, err := ReadInput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadInput: %v", err)
+	}
+	if hi.HookEventName != "PermissionDenied" {
+		t.Errorf("HookEventName = %q, want %q", hi.HookEventName, "PermissionDenied")
+	}
+	if hi.ToolName != "Bash" {
+		t.Errorf("ToolName = %q, want %q", hi.ToolName, "Bash")
+	}
+	if hi.PermissionDeniedReason != "blocked by policy" {
+		t.Errorf("PermissionDeniedReason = %q, want %q", hi.PermissionDeniedReason, "blocked by policy")
+	}
+}
+
+func TestNewEventConstants(t *testing.T) {
+	events := []string{
+		EventPermissionDenied,
+		EventStopFailure,
+		EventTaskCreated,
+		EventTaskCompleted,
+		EventTeammateIdle,
+		EventInstructionsLoaded,
+		EventConfigChange,
+		EventCwdChanged,
+		EventFileChanged,
+		EventWorktreeCreate,
+		EventWorktreeRemove,
+		EventPostCompact,
+		EventElicitation,
+		EventElicitationResult,
+	}
+	expected := []string{
+		"PermissionDenied",
+		"StopFailure",
+		"TaskCreated",
+		"TaskCompleted",
+		"TeammateIdle",
+		"InstructionsLoaded",
+		"ConfigChange",
+		"CwdChanged",
+		"FileChanged",
+		"WorktreeCreate",
+		"WorktreeRemove",
+		"PostCompact",
+		"Elicitation",
+		"ElicitationResult",
+	}
+	for i, got := range events {
+		if got != expected[i] {
+			t.Errorf("constant[%d] = %q, want %q", i, got, expected[i])
+		}
+	}
+}

@@ -9,10 +9,10 @@ const (
 	TokenError
 
 	// Literals
-	TokenIdent      // identifier
-	TokenString     // "quoted string"
-	TokenNumber     // 123
-	TokenDuration   // 30s, 5m, 2h (number + unit combined during parsing)
+	TokenIdent     // identifier
+	TokenString    // "quoted string"
+	TokenNumber    // 123
+	TokenDuration  // 30s, 5m, 2h (number + unit combined during parsing)
 
 	// Keywords
 	TokenOn
@@ -35,14 +35,20 @@ const (
 	TokenCommand
 	TokenAsync
 
+	// New action keywords
+	TokenSwitchProfile
+	TokenInjectContext
+	TokenPrune
+
 	// Punctuation
-	TokenArrow    // ->
-	TokenColon    // :
-	TokenGT       // >
-	TokenLT       // <
-	TokenGTE      // >=
-	TokenLTE      // <=
-	TokenEQ       // =
+	TokenArrow // ->
+	TokenColon // :
+	TokenGT    // >
+	TokenLT    // <
+	TokenGTE   // >=
+	TokenLTE   // <=
+	TokenEQ    // =
+	TokenEQEQ  // ==
 
 	// Comment
 	TokenComment
@@ -57,25 +63,28 @@ type Token struct {
 }
 
 var keywords = map[string]TokenType{
-	"on":        TokenOn,
-	"if":        TokenIf,
-	"and":       TokenAnd,
-	"or":        TokenOr,
-	"not":       TokenNot,
-	"notify":    TokenNotify,
-	"run":       TokenRun,
-	"deny":      TokenDeny,
-	"require":   TokenRequire,
-	"summarize": TokenSummarize,
-	"log":       TokenLog,
-	"elapsed":   TokenElapsed,
-	"away":      TokenAway,
-	"focused":   TokenFocused,
-	"idle":      TokenIdle,
-	"matches":   TokenMatches,
-	"file":      TokenFile,
-	"command":   TokenCommand,
-	"async":     TokenAsync,
+	"on":             TokenOn,
+	"if":             TokenIf,
+	"and":            TokenAnd,
+	"or":             TokenOr,
+	"not":            TokenNot,
+	"notify":         TokenNotify,
+	"run":            TokenRun,
+	"deny":           TokenDeny,
+	"require":        TokenRequire,
+	"summarize":      TokenSummarize,
+	"log":            TokenLog,
+	"elapsed":        TokenElapsed,
+	"away":           TokenAway,
+	"focused":        TokenFocused,
+	"idle":           TokenIdle,
+	"matches":        TokenMatches,
+	"file":           TokenFile,
+	"command":        TokenCommand,
+	"async":          TokenAsync,
+	"switch_profile": TokenSwitchProfile,
+	"inject_context": TokenInjectContext,
+	"prune":          TokenPrune,
 }
 
 // String returns the token type name.
@@ -131,6 +140,12 @@ func (t TokenType) String() string {
 		return "command"
 	case TokenAsync:
 		return "async"
+	case TokenSwitchProfile:
+		return "switch_profile"
+	case TokenInjectContext:
+		return "inject_context"
+	case TokenPrune:
+		return "prune"
 	case TokenArrow:
 		return "->"
 	case TokenColon:
@@ -145,6 +160,8 @@ func (t TokenType) String() string {
 		return "<="
 	case TokenEQ:
 		return "="
+	case TokenEQEQ:
+		return "=="
 	case TokenComment:
 		return "comment"
 	default:

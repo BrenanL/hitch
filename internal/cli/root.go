@@ -36,6 +36,15 @@ func init() {
 		newImportCmd(),
 		newDenyListCmd(),
 		newProxyCmd(),
+		newSettingsCmd(),
+		newSessionsCmd(),
+		newAutopsyCmd(),
+		newProfileCmd(),
+		newLaunchCmd(),
+		newDaemonCmd(),
+		newAgentsCmd(),
+		newWatchCmd(),
+		newDashboardCmd(),
 	)
 }
 

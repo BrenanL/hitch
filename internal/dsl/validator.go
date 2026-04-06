@@ -96,6 +96,16 @@ func validateAction(action Action, rule *Rule, knownChannels map[string]bool, re
 				Message: "require action needs a check name",
 			})
 		}
+
+	case PruneAction:
+		// prune is most useful on context lifecycle events; warn on others
+		if rule.Event.HookEvent != "PreCompact" && rule.Event.HookEvent != "PostCompact" {
+			result.Warnings = append(result.Warnings, &ValidateError{
+				Line:      rule.Line,
+				Message:   fmt.Sprintf("prune action on %q has no effect; prune is only meaningful on 'pre-compact' or 'post-compact' events", rule.Event.Name),
+				IsWarning: true,
+			})
+		}
 	}
 }
 
@@ -119,6 +129,26 @@ func validateCondition(cond Condition, rule *Rule, result *ValidateResult) {
 			})
 		}
 
+	case FieldEqCondition:
+		switch c.Field {
+		case "error_type":
+			if rule.Event.HookEvent != "StopFailure" {
+				result.Warnings = append(result.Warnings, &ValidateError{
+					Line:      rule.Line,
+					Message:   "'error_type' condition is only meaningful on 'stop-failure' event",
+					IsWarning: true,
+				})
+			}
+		case "task_status":
+			if rule.Event.HookEvent != "TaskCreated" && rule.Event.HookEvent != "TaskCompleted" {
+				result.Warnings = append(result.Warnings, &ValidateError{
+					Line:      rule.Line,
+					Message:   "'task_status' condition is only meaningful on 'task-created' or 'task-completed' events",
+					IsWarning: true,
+				})
+			}
+		}
+
 	case NotCondition:
 		validateCondition(c.Cond, rule, result)
 
@@ -135,7 +165,9 @@ func validateCondition(cond Condition, rule *Rule, result *ValidateResult) {
 // canBlock returns true if the given Claude Code event supports blocking.
 func canBlock(hookEvent string) bool {
 	switch hookEvent {
-	case "PreToolUse", "UserPromptSubmit", "PermissionRequest", "Stop", "SubagentStop":
+	case "PreToolUse", "UserPromptSubmit", "PermissionRequest", "Stop", "SubagentStop",
+		"TaskCreated", "TaskCompleted", "TeammateIdle", "ConfigChange",
+		"WorktreeCreate", "Elicitation", "ElicitationResult":
 		return true
 	default:
 		return false

@@ -16,6 +16,12 @@ type EvalContext struct {
 	LastPrompt   time.Time // last user interaction time
 	Now          time.Time
 	DenyLists    map[string][]string // deny list name → patterns
+	BurnRate     float64             // current token burn rate (tokens/min)
+	Model        string              // model identifier for the current session
+	ContextSize  int                 // current context token count
+	ContextUsage float64             // percentage of context window filled (0–100)
+	ErrorType    string              // error_type from StopFailure events
+	TaskStatus   string              // task_status from TaskCompleted events
 }
 
 // EvalCondition evaluates a condition against the given context.
@@ -38,6 +44,16 @@ func EvalCondition(cond dsl.Condition, ctx *EvalContext) bool {
 		return EvalCondition(c.Left, ctx) && EvalCondition(c.Right, ctx)
 	case dsl.OrCondition:
 		return EvalCondition(c.Left, ctx) || EvalCondition(c.Right, ctx)
+	case dsl.BurnRateCondition:
+		return evalBurnRate(c, ctx)
+	case dsl.ModelCondition:
+		return evalModel(c, ctx)
+	case dsl.ContextSizeCondition:
+		return evalContextSize(c, ctx)
+	case dsl.ContextUsageCondition:
+		return evalContextUsage(c, ctx)
+	case dsl.FieldEqCondition:
+		return evalFieldEq(c, ctx)
 	default:
 		return false
 	}
@@ -154,6 +170,70 @@ func compareTime(actual time.Duration, op string, threshold time.Duration) bool 
 		return actual <= threshold
 	case "=":
 		return actual == threshold
+	default:
+		return false
+	}
+}
+
+func compareFloat(actual float64, op string, threshold float64) bool {
+	switch op {
+	case ">":
+		return actual > threshold
+	case "<":
+		return actual < threshold
+	case ">=":
+		return actual >= threshold
+	case "<=":
+		return actual <= threshold
+	case "=":
+		return actual == threshold
+	default:
+		return false
+	}
+}
+
+func compareInt(actual int, op string, threshold int) bool {
+	switch op {
+	case ">":
+		return actual > threshold
+	case "<":
+		return actual < threshold
+	case ">=":
+		return actual >= threshold
+	case "<=":
+		return actual <= threshold
+	case "=":
+		return actual == threshold
+	default:
+		return false
+	}
+}
+
+func evalBurnRate(c dsl.BurnRateCondition, ctx *EvalContext) bool {
+	return compareFloat(ctx.BurnRate, c.Op, c.Threshold)
+}
+
+func evalModel(c dsl.ModelCondition, ctx *EvalContext) bool {
+	if ctx.Model == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ctx.Model), strings.ToLower(c.Substring))
+}
+
+func evalContextSize(c dsl.ContextSizeCondition, ctx *EvalContext) bool {
+	return compareInt(ctx.ContextSize, c.Op, c.Threshold)
+}
+
+func evalContextUsage(c dsl.ContextUsageCondition, ctx *EvalContext) bool {
+	return compareFloat(ctx.ContextUsage, c.Op, c.Threshold)
+}
+
+func evalFieldEq(c dsl.FieldEqCondition, ctx *EvalContext) bool {
+	switch c.Field {
+	case "error_type":
+		return ctx.ErrorType == c.Value
+	case "task_status":
+		return ctx.TaskStatus == c.Value
 	default:
 		return false
 	}

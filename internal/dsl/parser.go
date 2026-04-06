@@ -178,8 +178,14 @@ func (p *Parser) parseAction() (Action, error) {
 		return p.parseSummarizeAction()
 	case TokenLog:
 		return p.parseLogAction()
+	case TokenSwitchProfile:
+		return p.parseSwitchProfileAction()
+	case TokenInjectContext:
+		return p.parseInjectContextAction()
+	case TokenPrune:
+		return p.parsePruneAction()
 	default:
-		return nil, p.error(tok, fmt.Sprintf("expected action (notify, run, deny, require, summarize, log), got %q", tok.Value))
+		return nil, p.error(tok, fmt.Sprintf("expected action (notify, run, deny, require, summarize, log, switch_profile, inject_context, prune), got %q", tok.Value))
 	}
 }
 
@@ -348,8 +354,26 @@ func (p *Parser) parseSimpleExpr() (Condition, error) {
 		}
 		return p.parseMatchPattern("command")
 
+	case TokenIdent:
+		switch tok.Value {
+		case "burn_rate":
+			return p.parseBurnRateExpr()
+		case "model":
+			return p.parseModelExpr()
+		case "context_size":
+			return p.parseContextSizeExpr()
+		case "context_usage":
+			return p.parseContextUsageExpr()
+		case "error_type":
+			return p.parseFieldEqExpr("error_type")
+		case "task_status":
+			return p.parseFieldEqExpr("task_status")
+		default:
+			return nil, p.error(tok, fmt.Sprintf("expected condition (elapsed, away, focused, idle, matches, file, command, not, burn_rate, model, context_size, context_usage, error_type, task_status), got %q", tok.Value))
+		}
+
 	default:
-		return nil, p.error(tok, fmt.Sprintf("expected condition (elapsed, away, focused, idle, matches, file, command, not), got %q", tok.Value))
+		return nil, p.error(tok, fmt.Sprintf("expected condition (elapsed, away, focused, idle, matches, file, command, not, burn_rate, model, context_size, context_usage, error_type, task_status), got %q", tok.Value))
 	}
 }
 
@@ -500,6 +524,108 @@ func parseDurationString(s string, line, col int) (time.Duration, error) {
 	}
 }
 
+func (p *Parser) parseBurnRateExpr() (Condition, error) {
+	p.advance() // consume "burn_rate"
+
+	op, err := p.parseComparison()
+	if err != nil {
+		return nil, err
+	}
+
+	tok := p.peek()
+	if tok.Type != TokenNumber {
+		return nil, p.error(tok, "expected number after burn_rate comparison")
+	}
+	p.advance()
+
+	f, err := strconv.ParseFloat(tok.Value, 64)
+	if err != nil {
+		return nil, p.error(tok, fmt.Sprintf("invalid number %q", tok.Value))
+	}
+
+	return BurnRateCondition{Op: op, Threshold: f}, nil
+}
+
+func (p *Parser) parseModelExpr() (Condition, error) {
+	p.advance() // consume "model"
+
+	containsTok := p.peek()
+	if containsTok.Type != TokenIdent || containsTok.Value != "contains" {
+		return nil, p.error(containsTok, "expected 'contains' after 'model'")
+	}
+	p.advance()
+
+	strTok := p.peek()
+	if strTok.Type != TokenString {
+		return nil, p.error(strTok, "expected string after 'model contains'")
+	}
+	p.advance()
+
+	return ModelCondition{Substring: strTok.Value}, nil
+}
+
+func (p *Parser) parseContextSizeExpr() (Condition, error) {
+	p.advance() // consume "context_size"
+
+	op, err := p.parseComparison()
+	if err != nil {
+		return nil, err
+	}
+
+	tok := p.peek()
+	if tok.Type != TokenNumber {
+		return nil, p.error(tok, "expected integer after context_size comparison")
+	}
+	p.advance()
+
+	n, err := strconv.Atoi(tok.Value)
+	if err != nil {
+		return nil, p.error(tok, fmt.Sprintf("invalid integer %q", tok.Value))
+	}
+
+	return ContextSizeCondition{Op: op, Threshold: n}, nil
+}
+
+func (p *Parser) parseContextUsageExpr() (Condition, error) {
+	p.advance() // consume "context_usage"
+
+	op, err := p.parseComparison()
+	if err != nil {
+		return nil, err
+	}
+
+	tok := p.peek()
+	if tok.Type != TokenNumber {
+		return nil, p.error(tok, "expected number after context_usage comparison")
+	}
+	p.advance()
+
+	f, err := strconv.ParseFloat(tok.Value, 64)
+	if err != nil {
+		return nil, p.error(tok, fmt.Sprintf("invalid number %q", tok.Value))
+	}
+
+	return ContextUsageCondition{Op: op, Threshold: f}, nil
+}
+
+func (p *Parser) parseFieldEqExpr(field string) (Condition, error) {
+	p.advance() // consume field name token
+
+	tok := p.peek()
+	if tok.Type != TokenEQEQ {
+		return nil, p.error(tok, fmt.Sprintf("expected '==' after '%s'", field))
+	}
+	p.advance()
+
+	strTok := p.peek()
+	if strTok.Type != TokenString {
+		return nil, p.error(strTok, fmt.Sprintf("expected string after '%s =='", field))
+	}
+	p.advance()
+
+	return FieldEqCondition{Field: field, Value: strTok.Value}, nil
+}
+
 // Helper methods
 
 func (p *Parser) peek() Token {
@@ -569,13 +695,28 @@ var eventMap = map[string]struct {
 	"post-bash":      {hookEvent: "PostToolUse", defaultMatcher: "Bash"},
 	"pre-edit":       {hookEvent: "PreToolUse", defaultMatcher: "Edit|Write"},
 	"post-edit":      {hookEvent: "PostToolUse", defaultMatcher: "Edit|Write"},
-	"notification":   {hookEvent: "Notification", defaultMatcher: "*"},
-	"permission":     {hookEvent: "PermissionRequest", defaultMatcher: "*"},
-	"session-start":  {hookEvent: "SessionStart", defaultMatcher: "*"},
-	"session-end":    {hookEvent: "SessionEnd", defaultMatcher: "*"},
-	"pre-compact":    {hookEvent: "PreCompact", defaultMatcher: "*"},
-	"subagent-start": {hookEvent: "SubagentStart", defaultMatcher: "*"},
-	"subagent-stop":  {hookEvent: "SubagentStop", defaultMatcher: "*"},
+	"notification":        {hookEvent: "Notification", defaultMatcher: "*"},
+	"permission":          {hookEvent: "PermissionRequest", defaultMatcher: "*"},
+	"session-start":       {hookEvent: "SessionStart", defaultMatcher: "*"},
+	"session-end":         {hookEvent: "SessionEnd", defaultMatcher: "*"},
+	"pre-compact":         {hookEvent: "PreCompact", defaultMatcher: "*"},
+	"subagent-start":      {hookEvent: "SubagentStart", defaultMatcher: "*"},
+	"subagent-stop":       {hookEvent: "SubagentStop", defaultMatcher: "*"},
+	"user-prompt":         {hookEvent: "UserPromptSubmit", defaultMatcher: "*"},
+	"permission-denied":   {hookEvent: "PermissionDenied", defaultMatcher: "*"},
+	"task-created":        {hookEvent: "TaskCreated"},
+	"task-completed":      {hookEvent: "TaskCompleted"},
+	"stop-failure":        {hookEvent: "StopFailure"},
+	"teammate-idle":       {hookEvent: "TeammateIdle"},
+	"instructions-loaded": {hookEvent: "InstructionsLoaded", defaultMatcher: "*"},
+	"config-change":       {hookEvent: "ConfigChange", defaultMatcher: "*"},
+	"cwd-changed":         {hookEvent: "CwdChanged"},
+	"file-changed":        {hookEvent: "FileChanged", defaultMatcher: "*"},
+	"worktree-create":     {hookEvent: "WorktreeCreate"},
+	"worktree-remove":     {hookEvent: "WorktreeRemove"},
+	"post-compact":        {hookEvent: "PostCompact", defaultMatcher: "*"},
+	"elicitation":         {hookEvent: "Elicitation", defaultMatcher: "*"},
+	"elicitation-result":  {hookEvent: "ElicitationResult", defaultMatcher: "*"},
 }
 
 func resolveEvent(event *Event) error {
@@ -645,4 +786,56 @@ func levenshtein(a, b string) int {
 	}
 
 	return prev[lb]
+}
+
+func (p *Parser) parseSwitchProfileAction() (Action, error) {
+	p.advance() // consume "switch_profile"
+
+	nameTok := p.peek()
+	if nameTok.Type != TokenIdent && nameTok.Type != TokenString {
+		return nil, p.error(nameTok, "expected profile name after 'switch_profile'")
+	}
+	p.advance()
+
+	return SwitchProfileAction{Profile: nameTok.Value}, nil
+}
+
+func (p *Parser) parseInjectContextAction() (Action, error) {
+	p.advance() // consume "inject_context"
+
+	textTok := p.peek()
+	if textTok.Type != TokenString {
+		return nil, p.error(textTok, "expected quoted string after 'inject_context'")
+	}
+	p.advance()
+
+	return InjectContextAction{Text: textTok.Value}, nil
+}
+
+var validPruneTiers = map[string]bool{
+	"gentle":     true,
+	"moderate":   true,
+	"aggressive": true,
+	"emergency":  true,
+}
+
+func (p *Parser) parsePruneAction() (Action, error) {
+	p.advance() // consume "prune"
+
+	tierTok := p.peek()
+	if tierTok.Type != TokenIdent {
+		return nil, p.error(tierTok, "expected tier name after 'prune'")
+	}
+	p.advance()
+
+	if !validPruneTiers[tierTok.Value] {
+		return nil, &ParseError{
+			Line:       tierTok.Line,
+			Col:        tierTok.Col,
+			Message:    fmt.Sprintf("unknown prune tier %q", tierTok.Value),
+			Suggestion: "valid tiers are: gentle, moderate, aggressive, emergency",
+		}
+	}
+
+	return PruneAction{Tier: tierTok.Value}, nil
 }

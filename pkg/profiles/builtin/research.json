@@ -1,0 +1,14 @@
+{
+  "name": "research",
+  "description": "Optimized for code exploration — verbose output, no auto-edits",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "high",
+    "MAX_THINKING_TOKENS": "16000"
+  },
+  "settings": {
+    "effortLevel": "high",
+    "alwaysThinkingEnabled": true,
+    "showThinkingSummaries": true
+  },
+  "tags": ["builtin", "exploration"]
+}

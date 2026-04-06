@@ -422,3 +422,234 @@ func TestParseDenyNoCondition(t *testing.T) {
 		t.Errorf("condition should be nil")
 	}
 }
+
+func TestParseBurnRateCondition(t *testing.T) {
+	rules, err := Parse(`on stop -> notify slack if burn_rate > 0.8`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(BurnRateCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want BurnRateCondition", rules[0].Condition)
+	}
+	if cond.Op != ">" {
+		t.Errorf("Op = %q, want \">\"", cond.Op)
+	}
+	if cond.Threshold != 0.8 {
+		t.Errorf("Threshold = %v, want 0.8", cond.Threshold)
+	}
+}
+
+func TestParseModelContainsCondition(t *testing.T) {
+	rules, err := Parse(`on stop -> notify slack if model contains "opus"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(ModelCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want ModelCondition", rules[0].Condition)
+	}
+	if cond.Substring != "opus" {
+		t.Errorf("Substring = %q, want \"opus\"", cond.Substring)
+	}
+}
+
+func TestParseContextSizeCondition(t *testing.T) {
+	rules, err := Parse(`on stop -> notify slack if context_size > 100000`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(ContextSizeCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want ContextSizeCondition", rules[0].Condition)
+	}
+	if cond.Op != ">" {
+		t.Errorf("Op = %q, want \">\"", cond.Op)
+	}
+	if cond.Threshold != 100000 {
+		t.Errorf("Threshold = %d, want 100000", cond.Threshold)
+	}
+}
+
+func TestParseContextUsageCondition(t *testing.T) {
+	rules, err := Parse(`on stop -> notify slack if context_usage > 80`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(ContextUsageCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want ContextUsageCondition", rules[0].Condition)
+	}
+	if cond.Op != ">" {
+		t.Errorf("Op = %q, want \">\"", cond.Op)
+	}
+	if cond.Threshold != 80 {
+		t.Errorf("Threshold = %v, want 80", cond.Threshold)
+	}
+}
+
+func TestParseErrorTypeCondition(t *testing.T) {
+	rules, err := Parse(`on stop-failure -> notify slack if error_type == "rate_limit"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(FieldEqCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want FieldEqCondition", rules[0].Condition)
+	}
+	if cond.Field != "error_type" {
+		t.Errorf("Field = %q, want \"error_type\"", cond.Field)
+	}
+	if cond.Value != "rate_limit" {
+		t.Errorf("Value = %q, want \"rate_limit\"", cond.Value)
+	}
+}
+
+func TestParseTaskStatusCondition(t *testing.T) {
+	rules, err := Parse(`on task-completed -> notify slack if task_status == "completed"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cond, ok := rules[0].Condition.(FieldEqCondition)
+	if !ok {
+		t.Fatalf("condition type = %T, want FieldEqCondition", rules[0].Condition)
+	}
+	if cond.Field != "task_status" {
+		t.Errorf("Field = %q, want \"task_status\"", cond.Field)
+	}
+	if cond.Value != "completed" {
+		t.Errorf("Value = %q, want \"completed\"", cond.Value)
+	}
+}
+
+func TestParseNewEvents(t *testing.T) {
+	cases := []struct {
+		dslName        string
+		wantHookEvent  string
+		wantMatcher    string
+	}{
+		{"user-prompt", "UserPromptSubmit", "*"},
+		{"permission-denied", "PermissionDenied", "*"},
+		{"task-created", "TaskCreated", ""},
+		{"task-completed", "TaskCompleted", ""},
+		{"stop-failure", "StopFailure", ""},
+		{"teammate-idle", "TeammateIdle", ""},
+		{"instructions-loaded", "InstructionsLoaded", "*"},
+		{"config-change", "ConfigChange", "*"},
+		{"cwd-changed", "CwdChanged", ""},
+		{"file-changed", "FileChanged", "*"},
+		{"worktree-create", "WorktreeCreate", ""},
+		{"worktree-remove", "WorktreeRemove", ""},
+		{"post-compact", "PostCompact", "*"},
+		{"elicitation", "Elicitation", "*"},
+		{"elicitation-result", "ElicitationResult", "*"},
+	}
+
+	for _, tc := range cases {
+		rules, err := Parse(`on ` + tc.dslName + ` -> notify slack "test"`)
+		if err != nil {
+			t.Errorf("%s: Parse error: %v", tc.dslName, err)
+			continue
+		}
+		if len(rules) != 1 {
+			t.Errorf("%s: got %d rules, want 1", tc.dslName, len(rules))
+			continue
+		}
+		r := rules[0]
+		if r.Event.Name != tc.dslName {
+			t.Errorf("%s: event.Name = %q, want %q", tc.dslName, r.Event.Name, tc.dslName)
+		}
+		if r.Event.HookEvent != tc.wantHookEvent {
+			t.Errorf("%s: event.HookEvent = %q, want %q", tc.dslName, r.Event.HookEvent, tc.wantHookEvent)
+		}
+		if r.Event.Matcher != tc.wantMatcher {
+			t.Errorf("%s: event.Matcher = %q, want %q", tc.dslName, r.Event.Matcher, tc.wantMatcher)
+		}
+		if r.Event.DefaultMatcher != tc.wantMatcher {
+			t.Errorf("%s: event.DefaultMatcher = %q, want %q", tc.dslName, r.Event.DefaultMatcher, tc.wantMatcher)
+		}
+	}
+}
+
+func TestParseSwitchProfileAction(t *testing.T) {
+	rules, err := Parse(`on stop -> switch_profile conservative`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(rules))
+	}
+	action, ok := rules[0].Actions[0].(SwitchProfileAction)
+	if !ok {
+		t.Fatalf("action type = %T, want SwitchProfileAction", rules[0].Actions[0])
+	}
+	if action.Profile != "conservative" {
+		t.Errorf("profile = %q, want %q", action.Profile, "conservative")
+	}
+}
+
+func TestParseInjectContextAction(t *testing.T) {
+	rules, err := Parse(`on stop -> inject_context "hello"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(rules))
+	}
+	action, ok := rules[0].Actions[0].(InjectContextAction)
+	if !ok {
+		t.Fatalf("action type = %T, want InjectContextAction", rules[0].Actions[0])
+	}
+	if action.Text != "hello" {
+		t.Errorf("text = %q, want %q", action.Text, "hello")
+	}
+}
+
+func TestParsePruneAction(t *testing.T) {
+	rules, err := Parse(`on pre-compact -> prune gentle`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("got %d rules, want 1", len(rules))
+	}
+	action, ok := rules[0].Actions[0].(PruneAction)
+	if !ok {
+		t.Fatalf("action type = %T, want PruneAction", rules[0].Actions[0])
+	}
+	if action.Tier != "gentle" {
+		t.Errorf("tier = %q, want %q", action.Tier, "gentle")
+	}
+}
+
+func TestParsePruneAllValidTiers(t *testing.T) {
+	// Test all valid tier names (implementation uses: gentle, moderate, aggressive, emergency).
+	// Note: spec section 5.3 specifies "standard" and "auto" but implementation uses "moderate" and "emergency".
+	tiers := []string{"gentle", "moderate", "aggressive", "emergency"}
+	for _, tier := range tiers {
+		rules, err := Parse(`on pre-compact -> prune ` + tier)
+		if err != nil {
+			t.Errorf("prune %s: Parse error: %v", tier, err)
+			continue
+		}
+		if len(rules) != 1 {
+			t.Errorf("prune %s: got %d rules, want 1", tier, len(rules))
+			continue
+		}
+		action, ok := rules[0].Actions[0].(PruneAction)
+		if !ok {
+			t.Errorf("prune %s: action type = %T, want PruneAction", tier, rules[0].Actions[0])
+			continue
+		}
+		if action.Tier != tier {
+			t.Errorf("prune %s: tier = %q, want %q", tier, action.Tier, tier)
+		}
+	}
+}
+
+func TestParsePruneInvalidTier(t *testing.T) {
+	_, err := Parse(`on pre-compact -> prune badtier`)
+	if err == nil {
+		t.Fatal("expected parse error for invalid prune tier, got nil")
+	}
+}

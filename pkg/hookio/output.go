@@ -99,3 +99,22 @@ func WriteStdout(out *HookOutput) error {
 func (h *HookOutput) JSON() ([]byte, error) {
 	return json.Marshal(h)
 }
+
+// StopTeammate returns a HookOutput for TeammateIdle/TaskCreated/TaskCompleted that stops the teammate.
+func StopTeammate(reason string) *HookOutput {
+	f := false
+	return &HookOutput{
+		Continue:   &f,
+		StopReason: reason,
+	}
+}
+
+// WorktreePassthrough returns a HookOutput for WorktreeCreate hooks.
+// The worktreePath is returned via hookSpecificOutput.
+func WorktreePassthrough(worktreePath string) *HookOutput {
+	return &HookOutput{
+		HookSpecificOutput: map[string]any{
+			"worktree_path": worktreePath,
+		},
+	}
+}

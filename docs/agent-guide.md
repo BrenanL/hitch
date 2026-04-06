@@ -16,6 +16,7 @@ Following Go best practices:
 - **Unit tests** (white-box): `*_test.go` files co-located with source in the same package. These have access to unexported functions.
 - **Integration tests** (end-to-end): `integration/` directory at the project root. Separate package, tests only exported APIs.
 - **Test fixtures**: `testdata/` directories within packages (Go ignores these during build).
+- **Test standards**: See `docs/testing.md` for testing standards, shared utility packages, and quality expectations.
 
 ```
 internal/proxy/
@@ -47,6 +48,8 @@ go test ./integration/... -v      # Integration tests (verbose)
 go vet ./...                      # Static analysis (no output = clean)
 ```
 
+See `docs/testing.md` for full testing standards, shared utility documentation, and package-specific test guides.
+
 ## Proxy Development
 
 The proxy has testability constructors for pointing at fake upstreams and temp directories:
@@ -70,6 +73,34 @@ systemctl --user restart hitch-proxy    # Pick up new binary
 - No error handling for scenarios that can't happen
 - Prefer editing existing files over creating new ones
 - Keep imports organized: stdlib, then external, then internal
+
+## Shared Utility Packages
+
+Capabilities used by multiple Hitch components live in dedicated packages. The rule: **if two components need the same function, it must be extracted into a shared package.**
+
+| Package | Purpose | Consumers |
+|---------|---------|-----------|
+| `internal/pricing/` | Cost estimation by model string | proxy, sessions analysis, dashboard, `ht costs` |
+| `internal/tokens/` | Token estimation (`chars / 4` heuristic) | proxy inspection, session analysis, dashboard |
+| `internal/metrics/` | Burn rate, token velocity (canonical definitions) | daemon, dashboard, hook conditions, alerts |
+
+**Never duplicate logic that exists in a shared package.** Import it. If you find yourself writing cost calculation, token estimation, or burn rate math inline, stop and use the shared package.
+
+**What stays package-local:**
+- `internal/proxy/` owns proxy-specific logic: SSE passthrough, request forwarding, body logging
+- `pkg/sessions/` owns JSONL-specific logic: parsing transcripts, subagent correlation
+- Proxy does NOT parse JSONL. Sessions does NOT parse proxy request bodies.
+
+## UI Bubbling Principle
+
+When presenting lists of settings, environment variables, hooks, CLI commands, or any enumerable configuration to users or agents:
+
+- **Surface the most meaningful items first.** Don't dump all 128 env vars or 56 settings keys as a flat list.
+- **Group by category** with the most-used categories expanded and less-used ones collapsed.
+- **Quick toggles / highlights** for the 3-5 most impactful items at the top of any list view.
+- **Expand on demand** — show the full list when explicitly requested.
+
+This applies to TUI views (`ht settings`), CLI output (`ht agents`), documentation, and any context injected into agent prompts. The goal is to make what matters visible without burying it in noise.
 
 ## Project Structure
 
