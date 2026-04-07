@@ -48,9 +48,9 @@ Go forbids circular imports. The package dependency graph MUST be a DAG (directe
 ```
 CLI commands (internal/cli/)
     ↓ imports
-Libraries (internal/pricing/, internal/pruning/, internal/config/, etc.)
+Libraries (internal/pruning/, internal/config/, etc.)
     ↓ imports
-Public packages (pkg/sessions/, pkg/settings/, pkg/hookio/, pkg/envvars/)
+Public packages (pkg/usage/, pkg/sessions/, pkg/settings/, pkg/hookio/, pkg/envvars/)
     ↓ imports
 Shared types (pkg/tokens/types, or similar)
     ↓ imports
@@ -142,7 +142,7 @@ All operational state lives in `hitch.db`. Known tables:
 - `rules` — DSL rules
 - `events` — hook execution events
 - `sync_entries` — tracks synced hooks (markers, scope, settings path)
-- `active_profiles` — profile apply/reset state (project_dir PK, tracked_keys, originals, optional session_id for daemon linkage)
+- `active_profiles` — profile apply/reset state (project_dir PK, profile_name, scope, tracked_keys, originals, applied_at, optional session_id for daemon linkage)
 - `session_records` — daemon session tracking (session_id PK, origin, state, profile, pid, etc.)
 - `session_index` — cached session summaries for performance
 - `prune_events` — pruning operation logs
